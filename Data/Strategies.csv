@@ -1,0 +1,47 @@
+﻿Strategy_id,UID,Strategy_name,Description,Delay_min,Moneyness,Cap_USD,Straddle_Move_Pct,Spike_Thresh_Pct,Retrace_Thresh_Pct,Lookback_Bars,Stop_Loss_Pct,Target_Pct,Legs,Margin_Formula,
+TS,TS-0-U,Time Straddle,ATM straddle 0-min delay uncapped,0,ATM,,, , , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-0-10,Time Straddle,ATM straddle 0-min delay $10 cap,0,ATM,10,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-0-5,Time Straddle,ATM straddle 0-min delay $5 cap,0,ATM,5,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-15-U,Time Straddle,ATM straddle 15-min delay uncapped,15,ATM,,, , ,,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-15-10,Time Straddle,ATM straddle 15-min delay $10 cap,15,ATM,10,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-15-5,Time Straddle,ATM straddle 15-min delay $5 cap,15,ATM,5,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-30-U,Time Straddle,ATM straddle 30-min delay uncapped,30,ATM,,, , ,,50,,SELL_C+SELL_P,max(call_margin,
+TS,TS-30-10,Time Straddle,ATM straddle 30-min delay $10 cap,30,ATM,10,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-30-5,Time Straddle,ATM straddle 30-min delay $5 cap,30,ATM,5,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-45-U,Time Straddle,ATM straddle 45-min delay uncapped,45,ATM,,, , ,,50,,SELL_C+SELL_P,max(call_margin,
+TS,TS-45-10,Time Straddle,ATM straddle 45-min delay $10 cap,45,ATM,10,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-45-5,Time Straddle,ATM straddle 45-min delay $5 cap,45,ATM,5,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-180-U,Time Straddle,ATM straddle 180-min delay uncapped,180,ATM,,, , ,,50,,SELL_C+SELL_P,max(call_margin,
+TS,TS-180-10,Time Straddle,ATM straddle 180-min delay $10 cap,180,ATM,10,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-180-5,Time Straddle,ATM straddle 180-min delay $5 cap,180,ATM,5,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-240-U,Time Straddle,ATM straddle 240-min delay uncapped,240,ATM,,, , ,,50,,SELL_C+SELL_P,max(call_margin,
+TS,TS-240-10,Time Straddle,ATM straddle 240-min delay $10 cap,240,ATM,10,,, , ,50,,SELL_C+SELL_P,max(call_margin,
+TS,TS-240-5,Time Straddle,ATM straddle 240-min delay $5 cap,240,ATM,5,,, , ,50,,SELL_C+SELL_P,max(call_margin,
+TS,TS-210-U,Time Straddle,ATM straddle 210-min delay uncapped,210,ATM,,, , ,,50,,SELL_C+SELL_P,max(call_margin,
+TS,TS-210-10,Time Straddle,ATM straddle 210-min delay $10 cap,210,ATM,10,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-210-5,Time Straddle,ATM straddle 210-min delay $5 cap,210,ATM,5,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-270-U,Time Straddle,ATM straddle 270-min delay uncapped,270,ATM,,, , ,,50,,SELL_C+SELL_P,max(call_margin,
+TS,TS-270-10,Time Straddle,ATM straddle 270-min delay $10 cap,270,ATM,10,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+TS,TS-270-5,Time Straddle,ATM straddle 270-min delay $5 cap,270,ATM,5,,, , ,50,,SELL_C+SELL_P,max(call_margin,put_margin)
+UT,UT-0-10-20,Universal Trend,UT 0-min delay (20% straddle move),0,ATM,10,20, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-15-10-20,Universal Trend,UT 15-min delay (20% straddle move),15,ATM,10,20, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-120-10-20,Universal Trend,UT 120-min delay (20% straddle move),120,ATM,10,20, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-150-10-20,Universal Trend,UT 150-min delay (20% straddle move),150,ATM,10,20, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-165-10-20,Universal Trend,UT 165-min delay (20% straddle move),165,ATM,10,20, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-180-10-20,Universal Trend,UT 180-min delay (20% straddle move),180,ATM,10,20, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-195-10-20,Universal Trend,UT 195-min delay (20% straddle move),195,ATM,10,20, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-0-10-30,Universal Trend,UT 0-min delay (30% straddle move),0,ATM,10,30, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-15-10-30,Universal Trend,UT 15-min delay (30% straddle move),15,ATM,10,30, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-120-10-30,Universal Trend,UT 120-min delay (30% straddle move),120,ATM,10,30, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-150-10-30,Universal Trend,UT 150-min delay (30% straddle move),150,ATM,10,30, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-165-10-30,Universal Trend,UT 165-min delay (30% straddle move),165,ATM,10,30, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-180-10-30,Universal Trend,UT 180-min delay (30% straddle move),180,ATM,10,30, , , ,50,,SELL_C_OR_P,max(leg_margin),
+UT,UT-195-10-30,Universal Trend,UT 195-min delay (30% straddle move),195,ATM,10,30, , , ,50,,SELL_C_OR_P,max(leg_margin),
+SS,SS-30-U,SpikeSell,Spike 30-min delay (1x/0.05 retrace),30,ITM,,,100,5,10,80,100,SELL_SPIKE_LEG,,
+SS,SS-165-U,SpikeSell,Spike 165-min delay (1x/0.05 retrace),165,ITM,,,100,5,10,80,100,SELL_SPIKE_LEG,max(leg_margin),
+SS,SS-180-U,SpikeSell,Spike 180-min delay (1x/0.05 retrace),180,ITM,,,100,5,10,80,100,SELL_SPIKE_LEG,max(leg_margin),
+SS,SS-195-U,SpikeSell,Spike 195-min delay (1x/0.05 retrace),195,ITM,,,100,5,10,80,100,SELL_SPIKE_LEG,max(leg_margin),
+SS,SS-210-U,SpikeSell,Spike 210-min delay (1x/0.05 retrace),210,ITM,,,100,5,10,80,100,SELL_SPIKE_LEG,max(leg_margin),
+SS,SS-240-U,SpikeSell,Spike 240-min delay (1x/0.05 retrace),240,ITM,,,100,5,10,80,100,SELL_SPIKE_LEG,max(leg_margin),
+SS,SS-270-U,SpikeSell,Spike 270-min delay (1x/0.05 retrace),270,ITM,,,100,5,10,80,100,SELL_SPIKE_LEG,max(leg_margin),
+ERROR,Error,Error Trade,All error trades grouped,0,ATM,0,,,,,,,ERROR_LEG,0,
