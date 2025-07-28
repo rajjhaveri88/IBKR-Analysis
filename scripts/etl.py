@@ -223,16 +223,51 @@ def build_timeline_and_margin() -> None:
         )
         piv.columns = ["_".join(c) for c in piv.columns]
         
+        # pivot margins for underlying-specific margin data
+        piv_margin = (
+            alloc.pivot_table(
+                index="Date",
+                columns=["Strategy","UnderlyingSymbol"],
+                values="Margin",
+                aggfunc="sum",
+            )
+            .add_prefix("Margin_")
+        )
+        piv_margin.columns = ["_".join(c) for c in piv_margin.columns]
+        
+        # pivot hedged margins for underlying-specific hedged margin data
+        piv_hedged_margin = (
+            alloc.pivot_table(
+                index="Date",
+                columns=["Strategy","UnderlyingSymbol"],
+                values="Hedged Margin",
+                aggfunc="sum",
+            )
+            .add_prefix("HedgedMargin_")
+        )
+        piv_hedged_margin.columns = ["_".join(c) for c in piv_hedged_margin.columns]
+        
         # Forward-fill allocation values to persist until next change
         piv = piv.ffill()
+        piv_margin = piv_margin.ffill()
+        piv_hedged_margin = piv_hedged_margin.ffill()
         
         # Merge with timeline and then forward-fill the merged data
         tl = tl.merge(piv.reset_index(), on="Date", how="left")
+        tl = tl.merge(piv_margin.reset_index(), on="Date", how="left")
+        tl = tl.merge(piv_hedged_margin.reset_index(), on="Date", how="left")
         
         # Forward-fill allocation columns after merge to handle missing dates
         alloc_cols = [c for c in tl.columns if c.startswith("Allocation_")]
+        margin_cols = [c for c in tl.columns if c.startswith("Margin_")]
+        hedged_margin_cols = [c for c in tl.columns if c.startswith("HedgedMargin_")]
+        
         if alloc_cols:
             tl[alloc_cols] = tl[alloc_cols].ffill()
+        if margin_cols:
+            tl[margin_cols] = tl[margin_cols].ffill()
+        if hedged_margin_cols:
+            tl[hedged_margin_cols] = tl[hedged_margin_cols].ffill()
             
             # Reset strategies to 0 when they're removed (not present in allocation data)
             # For each allocation column, find the last date it was present and reset to 0 on the next allocation date
@@ -260,6 +295,14 @@ def build_timeline_and_margin() -> None:
                             if pd.notna(next_allocation_date):
                                 # Reset to 0 from the next allocation date onwards
                                 tl.loc[tl["Date"] >= next_allocation_date, col] = 0
+                                
+                                # Also reset corresponding margin and hedged margin columns
+                                margin_col = f"Margin_{strategy}_{underlying}"
+                                hedged_margin_col = f"HedgedMargin_{strategy}_{underlying}"
+                                if margin_col in tl.columns:
+                                    tl.loc[tl["Date"] >= next_allocation_date, margin_col] = 0
+                                if hedged_margin_col in tl.columns:
+                                    tl.loc[tl["Date"] >= next_allocation_date, hedged_margin_col] = 0
 
         # group margin by Strategy (which corresponds to UID_base)
         margin_df = (

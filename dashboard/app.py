@@ -15,7 +15,6 @@ PAGES = {
     "Strategy":  "strategy",
     "UID Runs":  "uid",
     "Trades":    "trades",
-    "Risk":      "risk",
     "Cash Flow": "cash",
 }
 choice = st.sidebar.radio("📊 Navigation", list(PAGES.keys()))
