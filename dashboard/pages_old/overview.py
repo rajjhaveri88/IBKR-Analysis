@@ -133,28 +133,43 @@ def render():
             start_date = end_date - pd.Timedelta(days=days_back)
             st.info(f"📅 {choice}: {start_date} to {end_date}")
 
-    # Data Loading and Filtering
-    def filter_dataframe_by_date(df, date_col, start_date, end_date):
-        """Filter dataframe by date range"""
-        if start_date is None or end_date is None:
-            return df
-        
-        df_copy = df.copy()
-        df_copy[date_col] = pd.to_datetime(df_copy[date_col], dayfirst=True)
-        mask = (df_copy[date_col].dt.date >= start_date) & (df_copy[date_col].dt.date <= end_date)
-        return df_copy[mask]
-
     # Load data
     timeline = load_timeline()
     trades = load_trades()
     nav_df = load_nav()
     fund_flow = load_fund_flow()
 
-    # Filter data based on date range
-    filtered_tl = filter_dataframe_by_date(timeline, "Date", start_date, end_date)
-    filtered_trades = filter_dataframe_by_date(trades, "TradeDate", start_date, end_date)
-    filtered_nav = filter_dataframe_by_date(nav_df, "Date", start_date, end_date)
-    filtered_fund_flow = filter_dataframe_by_date(fund_flow, "Date", start_date, end_date)
+    # Filter data based on date range (using same pattern as Strategy page)
+    if 'start_date' in locals() and start_date and end_date:
+        # Filter timeline
+        timeline["_dt"] = pd.to_datetime(timeline["Date"], dayfirst=True)
+        filtered_tl = timeline[(timeline["_dt"].dt.date >= start_date) & 
+                              (timeline["_dt"].dt.date <= end_date)].copy()
+        filtered_tl.drop("_dt", axis=1, inplace=True)
+        
+        # Filter trades
+        trades["_dt"] = pd.to_datetime(trades["TradeDate"], format="%d/%m/%y", dayfirst=True)
+        filtered_trades = trades[(trades["_dt"].dt.date >= start_date) & 
+                                (trades["_dt"].dt.date <= end_date)].copy()
+        filtered_trades.drop("_dt", axis=1, inplace=True)
+        
+        # Filter NAV
+        nav_df["_dt"] = pd.to_datetime(nav_df["Date"], dayfirst=True)
+        filtered_nav = nav_df[(nav_df["_dt"].dt.date >= start_date) & 
+                             (nav_df["_dt"].dt.date <= end_date)].copy()
+        filtered_nav.drop("_dt", axis=1, inplace=True)
+        
+        # Filter fund flow
+        fund_flow["_dt"] = pd.to_datetime(fund_flow["Date"], dayfirst=True)
+        filtered_fund_flow = fund_flow[(fund_flow["_dt"].dt.date >= start_date) & 
+                                      (fund_flow["_dt"].dt.date <= end_date)].copy()
+        filtered_fund_flow.drop("_dt", axis=1, inplace=True)
+    else:
+        # No date filter applied
+        filtered_tl = timeline
+        filtered_trades = trades
+        filtered_nav = nav_df
+        filtered_fund_flow = fund_flow
 
     # Capital Allocation Overview
     st.markdown('<h2 class="section-header">💰 Capital Allocation Overview</h2>', unsafe_allow_html=True)
