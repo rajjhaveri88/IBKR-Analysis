@@ -63,18 +63,10 @@ header {visibility: hidden;}
     margin-right: 0.5rem;
 }
 
-/* Make all selectboxes shorter by default */
+/* Make selectbox full page width */
 .stSelectbox > div > div {
-    width: auto !important;
-    min-width: 200px !important;
-    max-width: 300px !important;
-}
-
-/* Make ONLY the page navigation selectbox full page width */
-.page-navigation-container .stSelectbox > div > div {
     width: 100% !important;
-    min-width: 100% !important;
-    max-width: 100% !important;
+    max-width: none !important;
 }
 
 /* Main content area styling */
@@ -143,7 +135,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Create dropdown navigation with Overview as default (using default Streamlit styling)
-st.markdown('<div class="page-navigation-container">', unsafe_allow_html=True)
 page_names = list(PAGES.keys())
 selected_page = st.selectbox(
     "Select Page",
@@ -151,7 +142,6 @@ selected_page = st.selectbox(
     index=0,  # Overview is at index 0
     key="page_navigation"
 )
-st.markdown('</div>', unsafe_allow_html=True)
 
 # Main content area
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
