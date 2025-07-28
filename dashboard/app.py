@@ -13,36 +13,15 @@ st.set_page_config(
     page_title="IBKR Analytics Dashboard",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Force sidebar to always be expanded
+# Hide sidebar completely and create clean navigation
 st.markdown("""
 <style>
-/* Force sidebar to always be expanded */
+/* Hide sidebar completely */
 section[data-testid="stSidebar"] {
-    min-width: 21rem !important;
-    max-width: 21rem !important;
-    width: 21rem !important;
-    overflow: visible !important;
-}
-
-/* Hide Streamlit's default collapse button completely */
-button[data-testid="collapsedControl"] {
     display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Custom CSS for professional navigation
-st.markdown("""
-<style>
-/* Professional Navigation Styling */
-.sidebar .sidebar-content {
-    background-color: #f8f9fa;
 }
 
 /* Hide default Streamlit elements */
@@ -50,122 +29,102 @@ st.markdown("""
 footer {visibility: hidden;}
 header {visibility: hidden;}
 
-/* Sidebar behavior when collapsed */
-section[data-testid="stSidebar"] {
-    min-width: 300px !important;
+/* Clean header styling - Much lighter professional gradient */
+.main-header {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 50%, #dee2e6 100%);
+    padding: 2rem;
+    margin: -2rem -2rem 2rem -2rem;
+    border-radius: 0 0 15px 15px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    text-align: center;
+    border-bottom: 1px solid #ced4da;
+}
+
+.main-title {
+    color: #495057;
+    font-size: 2.5rem;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1rem;
+}
+
+.nav-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.nav-label {
+    color: #6c757d;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-right: 0.5rem;
+}
+
+/* Make all selectboxes shorter by default */
+.stSelectbox > div > div {
+    width: auto !important;
+    min-width: 200px !important;
     max-width: 300px !important;
 }
 
-/* When sidebar is collapsed, hide it completely */
-section[data-testid="stSidebar"][aria-expanded="false"] {
-    min-width: 0px !important;
-    max-width: 0px !important;
-    width: 0px !important;
-    overflow: hidden !important;
-}
-
-/* Style the sidebar toggle button */
-button[key="sidebar_toggle"] {
-    position: fixed !important;
-    left: 0px !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
-    z-index: 9999 !important;
-    background: #f0f2f6 !important;
-    border: 1px solid #e0e0e0 !important;
-    border-radius: 0 8px 8px 0 !important;
-    padding: 8px 4px !important;
-    box-shadow: 2px 0 4px rgba(0,0,0,0.1) !important;
-    cursor: pointer !important;
-    font-size: 16px !important;
-    color: #333 !important;
-    min-width: auto !important;
-    width: auto !important;
-}
-
-button[key="sidebar_toggle"]:hover {
-    background: #e0e0e0 !important;
-}
-
-/* Force sidebar to always be expanded and hide default toggle */
-section[data-testid="stSidebar"] {
-    min-width: 21rem !important;
-    max-width: 21rem !important;
-    width: 21rem !important;
-    overflow: visible !important;
-    aria-expanded: true !important;
-}
-
-/* Hide Streamlit's default collapse button */
-button[data-testid="collapsedControl"] {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-}
-
-/* Make main content wider when sidebar is collapsed */
-.main .block-container {
+/* Make ONLY the page navigation selectbox full page width */
+.page-navigation-container .stSelectbox > div > div {
+    width: 100% !important;
+    min-width: 100% !important;
     max-width: 100% !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
 }
 
-/* When sidebar is collapsed, expand main content */
-section[data-testid="stSidebar"][aria-expanded="false"] ~ .main .block-container {
-    max-width: 100% !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
+/* Main content area styling */
+.main-content {
+    padding: 2rem;
+    background: #ffffff;
+    border-radius: 15px;
+    margin-top: 1rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e9ecef;
 }
 
-/* Custom navigation styling */
-.nav-container {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    padding: 1rem;
-    border-radius: 10px;
-    margin-bottom: 2rem;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+/* Mobile responsive design */
+@media (max-width: 768px) {
+    .main-title {
+        font-size: 1.8rem;
+    }
+    
+    .nav-container {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .nav-label {
+        font-size: 1rem;
+        margin-right: 0;
+        margin-bottom: 0.5rem;
+    }
+    
+    .main-content {
+        padding: 1rem;
+        margin-top: 0.5rem;
+    }
 }
 
-.nav-title {
-    color: white;
-    font-size: 1.2rem;
-    font-weight: 600;
-    text-align: center;
-    margin-bottom: 1rem;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-/* Style buttons as clickable headers */
-.nav-button {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    margin: 0.5rem 0;
-    color: white;
-    font-weight: 500;
-    transition: all 0.3s ease;
-    cursor: pointer;
-    text-align: center;
-    width: 100%;
-}
-
-.nav-button:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-
-.nav-button.selected {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: rgba(255, 255, 255, 0.4);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    font-weight: 600;
+/* Extra small mobile devices */
+@media (max-width: 480px) {
+    .main-title {
+        font-size: 1.5rem;
+    }
+    
+    .main-header {
+        padding: 1.5rem 1rem;
+        margin: -1rem -1rem 1rem -1rem;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
 
-# Professional page mapping - only main pages
+# Professional page mapping
 PAGES = {
     "📊 Overview": "overview",
     "🎯 Strategy": "strategy", 
@@ -174,34 +133,36 @@ PAGES = {
     "📈 Trades": "trades"
 }
 
-
-
-# Create professional navigation header
-st.sidebar.markdown("""
-<div class="nav-container">
-    <div class="nav-title">IBKR Analytics</div>
+# Create header with title and navigation (removed duplicate title)
+st.markdown("""
+<div class="main-header">
+    <div class="nav-container">
+        <div class="nav-label">Select Page:</div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Initialize session state for current page
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "📊 Overview"
-
-# Create custom navigation buttons
+# Create dropdown navigation with Overview as default (using default Streamlit styling)
+st.markdown('<div class="page-navigation-container">', unsafe_allow_html=True)
 page_names = list(PAGES.keys())
-for page_name in page_names:
-    is_selected = st.session_state.current_page == page_name
-    button_style = "selected" if is_selected else ""
-    
-    if st.sidebar.button(
-        page_name, 
-        key=f"nav_{page_name}",
-        help=f"Navigate to {page_name}",
-        use_container_width=True
-    ):
-        st.session_state.current_page = page_name
+selected_page = st.selectbox(
+    "Select Page",
+    page_names,
+    index=0,  # Overview is at index 0
+    key="page_navigation"
+)
+st.markdown('</div>', unsafe_allow_html=True)
 
-# Load and render selected page
-selected_page_file = PAGES[st.session_state.current_page]
-page_mod = import_module(f"dashboard.pages_old.{selected_page_file}")
-page_mod.render() 
+# Main content area
+st.markdown('<div class="main-content">', unsafe_allow_html=True)
+
+# Load and render the selected page
+page_module = PAGES[selected_page]
+try:
+    page_mod = import_module(f"dashboard.pages_old.{page_module}")
+    page_mod.render()
+except Exception as e:
+    st.error(f"Error loading page {page_module}: {str(e)}")
+    st.info("Please check if the page file exists and has a render() function.")
+
+st.markdown('</div>', unsafe_allow_html=True) 
