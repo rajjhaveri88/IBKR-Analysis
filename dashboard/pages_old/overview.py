@@ -27,7 +27,6 @@ def render():
         text-align: center;
         margin-bottom: 2rem;
         padding: 1rem 0;
-        border-bottom: 3px solid #3b82f6;
     }
     .section-header {
         font-size: 1.5rem;
@@ -35,8 +34,6 @@ def render():
         color: #374151;
         margin: 2rem 0 1rem 0;
         padding: 0.5rem 0;
-        border-left: 4px solid #3b82f6;
-        padding-left: 1rem;
     }
     .subsection-header {
         font-size: 1.2rem;
@@ -109,9 +106,7 @@ def render():
     All metrics are calculated using actual trade data and fund flow statements.
     """)
 
-    # Date Range Filter Section
-    st.markdown('<h3 class="subsection-header">🗓️ Date Range Selection</h3>', unsafe_allow_html=True)
-    
+    # Date Range Filter
     presets = {
         "All to Date":   "all",
         "Last 1 Day":     1,
@@ -122,27 +117,21 @@ def render():
         "Custom Range":  "custom"
     }
     
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        choice = st.selectbox("Select Time Period", list(presets.keys()), index=0)
-    
+    choice = st.selectbox("Date Range", list(presets.keys()), index=0)
     if choice == "Custom Range":
-        with col2:
-            c1, c2 = st.columns(2)
-            start_date = c1.date_input("Start Date", value=None)
-            end_date   = c2.date_input("End Date",   value=None)
+        c1, c2 = st.columns(2)
+        start_date = c1.date_input("Start Date", value=None)
+        end_date   = c2.date_input("End Date",   value=None)
     else:
         days_back = presets[choice]
         if days_back == "all":
             start_date = end_date = None
-            with col2:
-                st.info("📅 **Analysis Period:** All available data to date")
+            st.info("📅 All to Date")
         else:
             days_back = int(days_back)
             end_date   = pd.Timestamp.now().date()
             start_date = end_date - pd.Timedelta(days=days_back)
-            with col2:
-                st.info(f"📅 **Analysis Period:** {start_date} to {end_date} ({choice})")
+            st.info(f"📅 {choice}: {start_date} to {end_date}")
 
     # Data Loading and Filtering
     def filter_dataframe_by_date(df, date_col, start_date, end_date):
@@ -222,14 +211,51 @@ def render():
             line=dict(color="blue", width=2)
         ))
 
+        # Calculate Y-axis range with leeway
+        max_value = max(
+            filtered_tl['TotalAllocation'].max(),
+            filtered_tl['SpareCapital'].max()
+        ) if not filtered_tl.empty else 1000
+        
+        # Add 20% leeway to the top
+        y_max = max_value * 1.2
+        
+        # Calculate X-axis range with leeway
+        if not filtered_tl.empty:
+            x_min = filtered_tl['Date'].min()
+            x_max = filtered_tl['Date'].max()
+            x_range = (x_max - x_min).days
+            # Add 10% leeway on each side
+            x_leeway = x_range * 0.1
+            x_min_with_leeway = x_min - pd.Timedelta(days=x_leeway)
+            x_max_with_leeway = x_max + pd.Timedelta(days=x_leeway)
+        else:
+            x_min_with_leeway = pd.Timestamp.now() - pd.Timedelta(days=30)
+            x_max_with_leeway = pd.Timestamp.now()
+
         fig.update_layout(
             title="Capital Allocation Over Time",
             xaxis_title="Date",
             yaxis_title="Capital (×1,000)",
+            xaxis=dict(
+                range=[x_min_with_leeway, x_max_with_leeway],
+                dtick="D7",  # Show tick every 7 days
+                tickangle=-45,  # Angle labels for better readability
+                tickmode="auto",
+                nticks=15  # Show approximately 15 ticks
+            ),
+            yaxis=dict(
+                range=[0, max(y_max, 1200000)],  # Show up to 1.2M or higher if data exceeds it
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128,128,128,0.2)',
+                dtick=max(y_max, 1200000)/6,  # Show 6 grid lines including top
+                tickmode="auto"
+            ),
             legend=dict(orientation="h", y=1.02, x=1, xanchor="right"),
-            margin=dict(l=40, r=40, t=60, b=40),
+            margin=dict(l=40, r=40, t=150, b=60),  # Increased top margin for more space
             hovermode="x unified",
-            height=500
+            height=650
         )
         
         st.plotly_chart(fig, use_container_width=True)

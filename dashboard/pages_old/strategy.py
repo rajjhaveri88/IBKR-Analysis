@@ -1,4 +1,4 @@
-# dashboard/pages/uid.py
+# dashboard/pages/strategy.py
 
 import streamlit as st
 import pandas as pd
@@ -8,109 +8,96 @@ import plotly.express as px
 from scripts.loaders import (
     load_trades,      # DataFrame of your trades ledger
     load_timeline,    # DataFrame of your raw allocation/margin timeline
-    load_uid_margin,  # DataFrame of UID margin data
+    load_strategies,  # DataFrame listing available strategies
 )
 
 
-
-def calculate_uid_nav_with_hedged_margin(uid_name, trades_df, timeline_df, uid_margin_df):
+def calculate_strategy_nav_with_units(strategy_name, trades_df, timeline_df, selected_underlying=None):
     """
     Returns a DataFrame indexed by Date with columns:
-      - nav   : UID NAV (starts at 100, steps on pnl%)
-      - units : Total units held (adjusts only when margin changes)
-    Uses underlying-specific margin amounts and hedged margin when applicable.
+      - nav   : Strategy NAV (starts at 100, steps on pnl%)
+      - units : Total units held (adjusts only when allocation changes)
+    Assumes allocation columns named:
+      Allocation_<Strategy>_Allocation_<Underlying>
     """
-    # 1) Get UID trades
-    df_uid = trades_df[trades_df["UID"] == uid_name].copy()
-    if df_uid.empty:
-        return pd.DataFrame(columns=["nav", "units"])
-    
-    # 2) Get the strategy and underlying for this UID
-    strategy = df_uid["Strategy"].iloc[0] if "Strategy" in df_uid.columns else None
-    underlying = df_uid["UnderlyingSymbol"].iloc[0] if "UnderlyingSymbol" in df_uid.columns else None
-    
-    if not strategy or not underlying:
-        return pd.DataFrame(columns=["nav", "units"])
-    
-    # 3) Get margin data - try underlying-specific first, then fallback to UID margin
-    margin_ser = None
-    
-    # Try to get underlying-specific margin from timeline
-    margin_col = f"Margin_{strategy}_Margin_{underlying}"
-    hedged_margin_col = f"HedgedMargin_{strategy}_HedgedMargin_{underlying}"
-    
-    if margin_col in timeline_df.columns:
+    # 0) Pivot tidy timeline_df into wide form if needed
+    if {"Strategy", "UnderlyingSymbol", "Allocation"}.issubset(timeline_df.columns):
         timeline_df["Date"] = pd.to_datetime(timeline_df["Date"])
-        margin_ser = timeline_df.set_index("Date")[margin_col].sort_index()
-        
-        # If hedged trades exist, try to use hedged margin
-        has_hedged_trades = df_uid["IsHedge"].any() if "IsHedge" in df_uid.columns else False
-        if has_hedged_trades and hedged_margin_col in timeline_df.columns:
-            hedged_margin_ser = timeline_df.set_index("Date")[hedged_margin_col].sort_index()
-            if not hedged_margin_ser.empty and hedged_margin_ser.notna().any():
-                margin_ser = hedged_margin_ser
-    
-    # Fallback to UID margin if no underlying-specific data
-    if margin_ser is None or margin_ser.empty:
-        uid_margin = uid_margin_df[uid_margin_df["UID"] == uid_name].copy()
-        if uid_margin.empty:
+        pivot = (
+            timeline_df
+              .pivot_table(
+                  index="Date",
+                  columns=["Strategy", "UnderlyingSymbol"],
+                  values="Allocation",
+                  aggfunc="sum",
+                  fill_value=0
+              )
+        )
+        pivot.columns = [
+            f"Allocation_{s}_Allocation_{u}"
+            for s, u in pivot.columns
+        ]
+        pivot = pivot.sort_index()
+        timeline_df = pivot.reset_index()
+
+    # 1) Extract allocation series
+    if selected_underlying and selected_underlying != "All":
+        alloc_col = f"Allocation_{strategy_name}_Allocation_{selected_underlying}"
+        if alloc_col not in timeline_df.columns:
+            # Return empty DataFrame for strategies without allocation data
             return pd.DataFrame(columns=["nav", "units"])
-        
-        uid_margin["Date"] = pd.to_datetime(uid_margin["Date"])
-        margin_ser = uid_margin.set_index("Date")["Margin"].sort_index()
+        alloc_ser = timeline_df.set_index("Date")[alloc_col].sort_index()
+    else:
+        alloc_cols = [
+            c for c in timeline_df.columns
+            if c.startswith(f"Allocation_{strategy_name}_Allocation_")
+        ]
+        if not alloc_cols:
+            # Return empty DataFrame for strategies without allocation data
+            return pd.DataFrame(columns=["nav", "units"])
+        alloc_ser = timeline_df.set_index("Date")[alloc_cols].sum(axis=1).sort_index()
+
+    # 2) Carry forward until changed, then drop zeros
+    alloc_ser = alloc_ser.ffill().fillna(0)
+    alloc_ser = alloc_ser[alloc_ser > 0]
     
-    # 4) Create daily trade count and apply margin multiplication only on trade days
-    df_uid["Date"] = pd.to_datetime(
-        df_uid["TradeDate"], format="%d/%m/%y", dayfirst=True
-    )
-    
-    # Create trade count series
-    trade_count_ser = df_uid.groupby("Date").size()
-    
-    # Align and multiply margin by trade count only on days with trades
-    margin_ser = margin_ser.reindex(trade_count_ser.index.union(margin_ser.index)).ffill()
-    trade_count_ser = trade_count_ser.reindex(margin_ser.index).fillna(0)
-    margin_ser = margin_ser * trade_count_ser.where(trade_count_ser > 0, 1)
-    
-    # 5) Carry forward until changed, then drop zeros
-    margin_ser = margin_ser.ffill().fillna(0)
-    margin_ser = margin_ser[margin_ser > 0]
-    
-    if margin_ser.empty:
+    # Check if we have any allocation data
+    if alloc_ser.empty:
         return pd.DataFrame(columns=["nav", "units"])
 
-    # 6) Build daily P&L series
-    pnl_ser = df_uid.groupby("Date")["NetCash"].sum()
+    # 3) Build daily P&L series
+    df_strat = trades_df[trades_df["Strategy"] == strategy_name].copy()
+    df_strat["Date"] = pd.to_datetime(
+        df_strat["TradeDate"], format="%d/%m/%y", dayfirst=True
+    )
+    pnl_ser = df_strat.groupby("Date")["NetCash"].sum()
 
-    # 7) Merge margin + P&L, flag relevant days
+    # 4) Merge allocation + P&L, flag relevant days
     df = (
-        pd.DataFrame({"margin": margin_ser})
+        pd.DataFrame({"allocation": alloc_ser})
           .join(pnl_ser.rename("pnl"), how="left")
           .fillna({"pnl": 0})
           .sort_index()
     )
-    df["prev_margin"] = df["margin"].shift(1)
+    df["prev_alloc"] = df["allocation"].shift(1)
+    # Only set prev_alloc if DataFrame is not empty
     if not df.empty:
-        df.loc[df.index[0], "prev_margin"] = df["margin"].iloc[0]
-    df["margin_change"] = df["margin"] != df["prev_margin"]
-    df["relevant"]    = (df["pnl"] != 0) | df["margin_change"]
+        df.loc[df.index[0], "prev_alloc"] = df["allocation"].iloc[0]
+    df["alloc_change"] = df["allocation"] != df["prev_alloc"]
+    df["relevant"]    = (df["pnl"] != 0) | df["alloc_change"]
     df = df.loc[df["relevant"]]
 
-    # 8) Loop through relevant days, tracking NAV & units
+    # 5) Loop through relevant days, tracking NAV & units
     nav_list, units_list = [], []
     nav   = 100.0
-    
-    if df.empty:
-        return pd.DataFrame(columns=["nav", "units"])
-    
-    units = df["margin"].iloc[0] / nav
+    units = df["allocation"].iloc[0] / nav
 
     for _, row in df.iterrows():
         # apply that day's P&L% on previous capital
-        nav *= (1 + row["pnl"] / row["prev_margin"])
-        # adjust units only on margin change
-        if row["margin_change"]:
-            delta = row["margin"] - row["prev_margin"]
+        nav *= (1 + row["pnl"] / row["prev_alloc"])
+        # adjust units only on allocation change
+        if row["alloc_change"]:
+            delta = row["allocation"] - row["prev_alloc"]
             units += delta / nav
         # record
         nav_list.append(nav)
@@ -118,7 +105,7 @@ def calculate_uid_nav_with_hedged_margin(uid_name, trades_df, timeline_df, uid_m
 
     nav_df = pd.DataFrame({"nav": nav_list, "units": units_list}, index=df.index)
 
-    # 9) Prepend NAV=100 on day before first active date
+    # 6) Prepend NAV=100 on day before first active date
     first_date = nav_df.index.min()
     prev_day   = first_date - pd.Timedelta(days=1)
     start_units = nav_df["units"].iloc[0]
@@ -131,9 +118,12 @@ def calculate_uid_nav_with_hedged_margin(uid_name, trades_df, timeline_df, uid_m
     return nav_df
 
 
-def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_df):
-    """Render individual UID view with professional styling"""
-    st.markdown(f'<h3 class="subsection-header">📊 UID: {uid}</h3>', unsafe_allow_html=True)
+def render_individual_strategy(df, strategy, timeline_df, filtered_trades_df, selected_underlying):
+    """Render individual strategy view with professional styling"""
+    st.markdown(f'<h3 class="subsection-header">📊 Strategy: {strategy}</h3>', unsafe_allow_html=True)
+    
+    if selected_underlying:
+        st.markdown(f'<h4 class="subsection-header">🎯 Underlying: {selected_underlying}</h4>', unsafe_allow_html=True)
     
     # — P&L & risk metrics
     df = df.copy()  # Create a copy to avoid SettingWithCopyWarning
@@ -174,6 +164,9 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
             avg_slippage_pct = 0
     else:
         avg_slippage_pct = 0
+    
+    # — IB Commission metrics
+    total_ib_commission = df["IBCommission"].sum() if "IBCommission" in df.columns else 0
 
     # — NAV & units series (using filtered trades for date range consistency)
     tl2 = timeline_df.copy()
@@ -186,8 +179,8 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
         max_date = trade_dates.max()
         tl2 = tl2[(tl2["Date"] >= min_date) & (tl2["Date"] <= max_date)]
     
-    nav_units = calculate_uid_nav_with_hedged_margin(
-        uid, filtered_trades_df, tl2, uid_margin_df
+    nav_units = calculate_strategy_nav_with_units(
+        strategy, filtered_trades_df, tl2, selected_underlying
     )
     
     # Check if NAV data is available
@@ -223,7 +216,7 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
         st.markdown(f"""
         <div class="metric-container">
             <div class="metric-label">Profit Factor</div>
-            <div class="metric-value">{f'{profit_fac:.2f}' if not np.isnan(profit_fac) else 'N/A'}</div>
+            <div class="metric-value">{profit_fac:.2f}</div>
         </div>
         """, unsafe_allow_html=True)
     
@@ -297,8 +290,8 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
             
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Portfolio Value</div>
-                <div class="metric-value neutral-value">{val_ser.iloc[-1]:,.0f}</div>
+                <div class="metric-label">IB Commission</div>
+                <div class="metric-value neutral-value">${total_ib_commission:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -311,8 +304,8 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
             
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Portfolio Value</div>
-                <div class="metric-value neutral-value">N/A</div>
+                <div class="metric-label">IB Commission</div>
+                <div class="metric-value neutral-value">${total_ib_commission:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -362,9 +355,9 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.info("No NAV data available for this UID.")
+            st.info("No NAV data available for this strategy.")
     else:
-        st.info("No margin data available for NAV calculation.")
+        st.info("No allocation data available for NAV calculation.")
 
     # — charts
     st.markdown('<h3 class="subsection-header">📊 Performance Charts</h3>', unsafe_allow_html=True)
@@ -372,7 +365,7 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
     st.markdown('<h4 class="subsection-header">📈 Cumulative P&L</h4>', unsafe_allow_html=True)
     fig = px.line(
         daily_pnl.cumsum(),
-        title=f"Cumulative P&L: {uid}",
+        title=f"Cumulative P&L: {strategy}",
         labels={"value": "Cumulative P&L", "index": "Date"}
     )
     fig.update_layout(height=400, showlegend=False)
@@ -390,7 +383,7 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
             st.markdown('<h4 class="subsection-header">📈 NAV vs Time</h4>', unsafe_allow_html=True)
             fig = px.line(
                 active_nav,
-                title=f"NAV Performance: {uid}",
+                title=f"NAV Performance: {strategy}",
                 labels={"value": "NAV", "index": "Date"}
             )
             fig.update_layout(height=400, showlegend=False)
@@ -406,7 +399,7 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
             drawdown = (active_nav / active_nav.cummax() - 1) * 100
             fig = px.line(
                 drawdown,
-                title=f"Rolling Drawdown: {uid}",
+                title=f"Rolling Drawdown: {strategy}",
                 labels={"value": "Drawdown (%)", "index": "Date"}
             )
             fig.update_layout(height=400, showlegend=False)
@@ -421,7 +414,7 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
             st.markdown('<h4 class="subsection-header">📊 Units vs Time</h4>', unsafe_allow_html=True)
             fig = px.line(
                 units_ser,
-                title=f"Units Held: {uid}",
+                title=f"Units Held: {strategy}",
                 labels={"value": "Units", "index": "Date"}
             )
             fig.update_layout(height=400, showlegend=False)
@@ -429,20 +422,20 @@ def render_individual_uid(df, uid, timeline_df, uid_margin_df, filtered_trades_d
         else:
             st.info("No NAV data to display.")
     else:
-        st.info("No NAV charts available - margin data required.")
+        st.info("No NAV charts available - allocation data required.")
 
 
-def render_consolidated_view(full_trades_df, uids, timeline_df, uid_margin_df, filtered_trades_df=None):
+def render_consolidated_view(full_trades_df, strategies, timeline_df, filtered_trades_df=None):
     """Render consolidated view with professional styling"""
-    st.markdown('<h2 class="section-header">📊 Consolidated UID Performance</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">📊 Consolidated Strategy Performance</h2>', unsafe_allow_html=True)
     
     # Use filtered trades if provided, otherwise use full trades
     trades_df = filtered_trades_df if filtered_trades_df is not None else full_trades_df
     
     rows = []
     
-    for uid in uids:
-        df = trades_df[trades_df["UID"] == uid].copy()
+    for strategy in strategies:
+        df = trades_df[trades_df["Strategy"] == strategy].copy()
         if df.empty:
             continue
 
@@ -489,9 +482,14 @@ def render_consolidated_view(full_trades_df, uids, timeline_df, uid_margin_df, f
                 avg_slippage_pct = 0
         else:
             avg_slippage_pct = 0
+        
+        # — IB Commission metrics
+        total_ib_commission = df["IBCommission"].sum() if "IBCommission" in df.columns else 0
 
         # — NAV & units
-        nav_units = calculate_uid_nav_with_hedged_margin(uid, df, timeline_df, uid_margin_df)
+        tl2 = timeline_df.copy()
+        tl2["Date"] = pd.to_datetime(tl2["Date"], dayfirst=True)
+        nav_units = calculate_strategy_nav_with_units(strategy, df, tl2)
         
         if nav_units.empty:
             cagr = np.nan
@@ -518,7 +516,7 @@ def render_consolidated_view(full_trades_df, uids, timeline_df, uid_margin_df, f
                 portfolio_value = np.nan
 
         rows.append({
-            "UID": uid,
+            "Strategy": strategy,
             "Net P&L": f"{net_pnl:,.0f}",
             "Sharpe": f"{sharpe:.2f}",
             "Profit Factor": f"{profit_fac:.2f}" if not np.isnan(profit_fac) else "N/A",
@@ -530,50 +528,30 @@ def render_consolidated_view(full_trades_df, uids, timeline_df, uid_margin_df, f
             "Current Units": f"{current_units:,.2f}" if not np.isnan(current_units) else "N/A",
             "Total Slippage": f"{total_slippage:,.0f}",
             "Avg Slippage %": f"{avg_slippage_pct:.2f} %",
+            "IB Commission": f"${total_ib_commission:,.2f}",
         })
 
     if rows:
         dfc = pd.DataFrame(rows)
-        st.markdown('<h3 class="subsection-header">📋 UID Performance Summary</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 class="subsection-header">📋 Strategy Performance Summary</h3>', unsafe_allow_html=True)
         st.dataframe(dfc, use_container_width=True)
 
-        # — Summary metrics across all UIDs
-        st.markdown('<h3 class="subsection-header">📊 Summary Across All UIDs</h3>', unsafe_allow_html=True)
+        # — Summary metrics across all strategies
+        st.markdown('<h3 class="subsection-header">📊 Summary Across All Strategies</h3>', unsafe_allow_html=True)
         
         # Calculate totals and averages
         # Calculate total P&L from raw values to avoid rounding errors
         total_pnl = 0
-        for uid in uids:
-            df = trades_df[trades_df["UID"] == uid].copy()
+        for strategy in strategies:
+            df = trades_df[trades_df["Strategy"] == strategy].copy()
             if df.empty:
                 continue
             df["Date"] = pd.to_datetime(df["TradeDate"], format="%d/%m/%y", dayfirst=True)
             daily_pnl = df.groupby("Date")["NetCash"].sum().sort_index()
             net_pnl = daily_pnl.sum()
             total_pnl += net_pnl
-        
-        # Calculate weighted average Sharpe (weighted by number of trades)
-        sharpe_values = []
-        trade_weights = []
-        for row in rows:
-            sharpe_val = float(row["Sharpe"])
-            trade_count = row["Total Trades"]
-            # Filter out extreme individual Sharpe values before calculating weighted average
-            if np.isfinite(sharpe_val) and abs(sharpe_val) <= 100:
-                sharpe_values.append(sharpe_val)
-                trade_weights.append(trade_count)
-        
-        # Calculate weighted average Sharpe with safety checks
-        try:
-            if sharpe_values and trade_weights:
-                avg_sharpe = np.average(sharpe_values, weights=trade_weights)
-                # Final safety check for the calculated average
-                if not np.isfinite(avg_sharpe):
-                    avg_sharpe = 0
-            else:
-                avg_sharpe = 0
-        except:
-            avg_sharpe = 0
+        sharpe_values = [float(row["Sharpe"]) for row in rows]
+        avg_sharpe = np.mean(sharpe_values) if sharpe_values else 0
         
         # Calculate total trades and win rates
         total_trades = sum(row["Total Trades"] for row in rows)
@@ -586,30 +564,33 @@ def render_consolidated_view(full_trades_df, uids, timeline_df, uid_margin_df, f
         slippage_pcts = [float(row["Avg Slippage %"].replace(" %", "")) for row in rows if row["Avg Slippage %"] != "0.00 %"]
         avg_slippage_pct = np.mean(slippage_pcts) if slippage_pcts else 0
         
-        # Calculate summary metrics
-        total_uids = len(uids)
+        # Calculate total IB Commission
+        total_ib_commission = sum(float(row["IB Commission"].replace("$", "").replace(",", "")) for row in rows if row["IB Commission"] != "$0.00")
         
-        # Calculate active UIDs (those with trades on the last trade date)
-        active_uids = 0
+        # Calculate summary metrics
+        total_strategies = len(strategies)
+        
+        # Calculate active strategies (those with trades on the last trade date)
+        active_strategies = 0
         last_trade_date = None
         
-        # First, find the last trade date across all UIDs
-        for uid in uids:
-            uid_trades = trades_df[trades_df["UID"] == uid]
-            if not uid_trades.empty:
-                uid_trades["Date"] = pd.to_datetime(uid_trades["TradeDate"], format="%d/%m/%y", dayfirst=True)
-                max_date = uid_trades["Date"].max()
+        # First, find the last trade date across all strategies
+        for strategy in strategies:
+            strategy_trades = trades_df[trades_df["Strategy"] == strategy]
+            if not strategy_trades.empty:
+                strategy_trades["Date"] = pd.to_datetime(strategy_trades["TradeDate"], format="%d/%m/%y", dayfirst=True)
+                max_date = strategy_trades["Date"].max()
                 if last_trade_date is None or max_date > last_trade_date:
                     last_trade_date = max_date
         
-        # Now count UIDs that had trades on the last trade date
+        # Now count strategies that had trades on the last trade date
         if last_trade_date is not None:
-            for uid in uids:
-                uid_trades = trades_df[trades_df["UID"] == uid]
-                if not uid_trades.empty:
-                    uid_trades["Date"] = pd.to_datetime(uid_trades["TradeDate"], format="%d/%m/%y", dayfirst=True)
-                    if last_trade_date in uid_trades["Date"].values:
-                        active_uids += 1
+            for strategy in strategies:
+                strategy_trades = trades_df[trades_df["Strategy"] == strategy]
+                if not strategy_trades.empty:
+                    strategy_trades["Date"] = pd.to_datetime(strategy_trades["TradeDate"], format="%d/%m/%y", dayfirst=True)
+                    if last_trade_date in strategy_trades["Date"].values:
+                        active_strategies += 1
         
         # Display summary metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -675,19 +656,19 @@ def render_consolidated_view(full_trades_df, uids, timeline_df, uid_margin_df, f
         with col8:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Total UIDs</div>
-                <div class="metric-value neutral-value">{total_uids}</div>
+                <div class="metric-label">Total Strategies</div>
+                <div class="metric-value neutral-value">{total_strategies}</div>
             </div>
             """, unsafe_allow_html=True)
         
         # Display additional summary metrics
-        col9, col10, col11 = st.columns(3)
+        col9, col10, col11, col12 = st.columns(4)
         
         with col9:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Active UIDs</div>
-                <div class="metric-value neutral-value">{active_uids}</div>
+                <div class="metric-label">Active Strategies</div>
+                <div class="metric-value neutral-value">{active_strategies}</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -710,16 +691,24 @@ def render_consolidated_view(full_trades_df, uids, timeline_df, uid_margin_df, f
         with col11:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Total Strategies</div>
-                <div class="metric-value neutral-value">{len(set(trades_df['Strategy'].dropna()))}</div>
+                <div class="metric-label">Total UIDs</div>
+                <div class="metric-value neutral-value">{len(set(trades_df['UID'].dropna()))}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col12:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">Total IB Commission</div>
+                <div class="metric-value neutral-value">${total_ib_commission:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
     else:
-        st.warning("⚠️ No UID data available for the selected filters.")
+        st.warning("⚠️ No strategy data available for the selected filters.")
 
 
 def render():
-    st.set_page_config(layout="wide", page_title="UID Analytics")
+    st.set_page_config(layout="wide", page_title="Strategy Analytics")
     
     # Custom CSS for professional styling
     st.markdown("""
@@ -731,7 +720,6 @@ def render():
         text-align: center;
         margin-bottom: 2rem;
         padding: 1rem 0;
-        border-bottom: 3px solid #3b82f6;
     }
     .section-header {
         font-size: 1.5rem;
@@ -739,8 +727,6 @@ def render():
         color: #374151;
         margin: 2rem 0 1rem 0;
         padding: 0.5rem 0;
-        border-left: 4px solid #3b82f6;
-        padding-left: 1rem;
     }
     .subsection-header {
         font-size: 1.2rem;
@@ -803,45 +789,46 @@ def render():
     """, unsafe_allow_html=True)
 
     # Main Header
-    st.markdown('<h1 class="main-header">📈 UID Analytics Dashboard</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">📈 Strategy Analytics Dashboard</h1>', unsafe_allow_html=True)
     
     # Executive Summary
-    st.markdown('<h2 class="section-header">💼 UID Performance Analysis</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 class="section-header">💼 Strategy Performance Analysis</h2>', unsafe_allow_html=True)
     st.markdown("""
-    This dashboard provides comprehensive analytics for individual UIDs and consolidated performance views. 
-    All calculations are based on actual trade data and margin information.
+    This dashboard provides comprehensive analytics for individual strategies and consolidated performance views. 
+    All calculations are based on actual trade data and allocation information.
     """)
 
     trades     = load_trades()
     timeline   = load_timeline()
-    uid_margin = load_uid_margin()
+    strat_df   = load_strategies()
+    # Sort strategies in order: TS, UT, SS, Error
+    all_strategies = strat_df["Strategy_id"].unique()
+    strategies = []
     
-    # Get unique UIDs from trades data
-    # Sort UIDs in order: TS, UT, SS, Error
-    all_uids = trades["UID"].unique()
-    uids = []
-    
-    # Add TS UIDs first
-    uids.extend(sorted([u for u in all_uids if u.startswith("TS-")]))
-    # Add UT UIDs second
-    uids.extend(sorted([u for u in all_uids if u.startswith("UT-")]))
-    # Add SS UIDs third
-    uids.extend(sorted([u for u in all_uids if u.startswith("SS-")]))
+    # Add TS strategies first
+    strategies.extend(sorted([s for s in all_strategies if s == "TS"]))
+    # Add UT strategies second
+    strategies.extend(sorted([s for s in all_strategies if s == "UT"]))
+    # Add SS strategies third
+    strategies.extend(sorted([s for s in all_strategies if s == "SS"]))
     # Add Error last
-    uids.extend(sorted([u for u in all_uids if u == "Error"]))
-    # Include all UIDs including 'Error' to match strategy page
+    strategies.extend(sorted([s for s in all_strategies if s == "ERROR"]))
 
     view_mode = st.radio(
         "View Mode",
-        ["Consolidated View", "Individual UID"],
+        ["Consolidated View", "Individual Strategy"],
         horizontal=True
     )
 
-    if view_mode == "Individual UID":
-        uid = st.selectbox(
-            "Select UID", 
-            uids,
-            help="Select a UID to view individually"
+    if view_mode == "Individual Strategy":
+        strategy = st.selectbox(
+            "Select Strategy", 
+            strategies,
+            help="Select a strategy to view individually"
+        )
+        all_unds = sorted(trades["UnderlyingSymbol"].unique())
+        selected_underlying = st.selectbox(
+            "Filter by Underlying", ["All"] + all_unds
         )
 
         # Date range filter
@@ -871,7 +858,9 @@ def render():
                 st.info(f"📅 {choice}: {start_date} to {end_date}")
 
         # filter trades
-        df = trades[trades["UID"] == uid].copy()
+        df = trades[trades["Strategy"] == strategy].copy()
+        if selected_underlying != "All":
+            df = df[df["UnderlyingSymbol"] == selected_underlying]
         if 'start_date' in locals() and start_date and end_date:
             df["_dt"] = pd.to_datetime(
                 df["TradeDate"], format="%d/%m/%y", dayfirst=True
@@ -881,27 +870,27 @@ def render():
             df.drop("_dt", axis=1, inplace=True)
 
         if df.empty:
-            st.warning(f"No trades found for UID {uid} with these filters.")
+            st.warning(f"No trades found for strategy {strategy} with these filters.")
         else:
-            render_individual_uid(
-                df, uid, timeline, uid_margin, df
+            render_individual_strategy(
+                df, strategy, timeline, df, selected_underlying
             )
     else:
-        # UID filter for consolidated view
-        uid_filter = st.multiselect(
-            "Filter by UID",
-            ["All"] + uids,
+        # Strategy filter for consolidated view
+        strategy_filter = st.multiselect(
+            "Filter by Strategy",
+            ["All"] + strategies,
             default=["All"],
-            help="Select UIDs to include in consolidated view (select All or specific ones)"
+            help="Select strategies to include in consolidated view (select All or specific ones)"
         )
         
-        # Use all UIDs if "All" is selected, otherwise use the selected UIDs
-        if "All" in uid_filter:
-            selected_uids = uids
+        # Use all strategies if "All" is selected, otherwise use the selected strategies
+        if "All" in strategy_filter:
+            selected_strategies = strategies
         else:
-            selected_uids = [u for u in uid_filter if u != "All"]
-            if not selected_uids:  # If nothing selected, show all
-                selected_uids = uids
+            selected_strategies = [s for s in strategy_filter if s != "All"]
+            if not selected_strategies:  # If nothing selected, show all
+                selected_strategies = strategies
         
         # Date range filter for consolidated view
         presets = {
@@ -939,13 +928,13 @@ def render():
                                             (filtered_trades["_dt"].dt.date <= end_date)]
             filtered_trades.drop("_dt", axis=1, inplace=True)
 
-        render_consolidated_view(trades, selected_uids, timeline, uid_margin, filtered_trades)
+        render_consolidated_view(trades, selected_strategies, timeline, filtered_trades)
 
     # Footer
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #6b7280; font-size: 0.9rem; padding: 2rem 0;">
-        📈 UID Analytics Dashboard | Generated on {date} | 
+        📈 Strategy Analytics Dashboard | Generated on {date} | 
         Data Source: Interactive Brokers Trade Ledger
     </div>
     """.format(date=pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')), unsafe_allow_html=True)
