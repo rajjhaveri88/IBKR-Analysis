@@ -16,6 +16,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Force sidebar to always be expanded
+st.markdown("""
+<style>
+/* Force sidebar to always be expanded */
+section[data-testid="stSidebar"] {
+    min-width: 21rem !important;
+    max-width: 21rem !important;
+    width: 21rem !important;
+    overflow: visible !important;
+}
+
+/* Hide Streamlit's default collapse button completely */
+button[data-testid="collapsedControl"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Custom CSS for professional navigation
 st.markdown("""
 <style>
@@ -29,15 +50,71 @@ st.markdown("""
 footer {visibility: hidden;}
 header {visibility: hidden;}
 
-/* Prevent sidebar collapse and ensure it's always visible */
+/* Sidebar behavior when collapsed */
 section[data-testid="stSidebar"] {
     min-width: 300px !important;
     max-width: 300px !important;
 }
 
-/* Hide the sidebar collapse button */
+/* When sidebar is collapsed, hide it completely */
+section[data-testid="stSidebar"][aria-expanded="false"] {
+    min-width: 0px !important;
+    max-width: 0px !important;
+    width: 0px !important;
+    overflow: hidden !important;
+}
+
+/* Style the sidebar toggle button */
+button[key="sidebar_toggle"] {
+    position: fixed !important;
+    left: 0px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    z-index: 9999 !important;
+    background: #f0f2f6 !important;
+    border: 1px solid #e0e0e0 !important;
+    border-radius: 0 8px 8px 0 !important;
+    padding: 8px 4px !important;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.1) !important;
+    cursor: pointer !important;
+    font-size: 16px !important;
+    color: #333 !important;
+    min-width: auto !important;
+    width: auto !important;
+}
+
+button[key="sidebar_toggle"]:hover {
+    background: #e0e0e0 !important;
+}
+
+/* Force sidebar to always be expanded and hide default toggle */
+section[data-testid="stSidebar"] {
+    min-width: 21rem !important;
+    max-width: 21rem !important;
+    width: 21rem !important;
+    overflow: visible !important;
+    aria-expanded: true !important;
+}
+
+/* Hide Streamlit's default collapse button */
 button[data-testid="collapsedControl"] {
     display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+
+/* Make main content wider when sidebar is collapsed */
+.main .block-container {
+    max-width: 100% !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+}
+
+/* When sidebar is collapsed, expand main content */
+section[data-testid="stSidebar"][aria-expanded="false"] ~ .main .block-container {
+    max-width: 100% !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
 }
 
 /* Custom navigation styling */
@@ -96,6 +173,8 @@ PAGES = {
     "💰 Cash": "cash",
     "📈 Trades": "trades"
 }
+
+
 
 # Create professional navigation header
 st.sidebar.markdown("""
