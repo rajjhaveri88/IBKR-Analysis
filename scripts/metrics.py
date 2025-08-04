@@ -151,6 +151,99 @@ def uid_kpis(
     ).reset_index()
     return df
 
+# ─── FUND FLOW PnL CALCULATION ──────────────────────────────────
+
+def calculate_fund_flow_pnl(
+    fund_flow: pd.DataFrame|None=None,
+    start_date: str|None=None,
+    end_date: str|None=None
+) -> dict:
+    """
+    Calculate PnL from fund flow statement data.
+    
+    Formula: PnL = Ending Cash - Starting Cash - Deposits/Withdrawals - OtherFees - Broker Interest
+    
+    Args:
+        fund_flow: Fund flow DataFrame (optional, will load if not provided)
+        start_date: Start date filter (optional, format: 'YYYY-MM-DD')
+        end_date: End date filter (optional, format: 'YYYY-MM-DD')
+    
+    Returns:
+        Dictionary with PnL calculation details
+    """
+    from scripts.loaders import load_fund_flow
+    
+    ff = fund_flow if fund_flow is not None else load_fund_flow()
+    
+    if ff.empty:
+        return {
+            "total_pnl": 0.0,
+            "daily_pnl": pd.Series(dtype=float),
+            "starting_cash": 0.0,
+            "ending_cash": 0.0,
+            "total_deposits": 0.0,
+            "total_interest": 0.0,
+            "calculation": "No fund flow data available"
+        }
+    
+    # Ensure Date column is datetime
+    ff = ff.copy()
+    ff["Date"] = pd.to_datetime(ff["Date"], dayfirst=True)
+    
+    # Apply date filters if provided
+    if start_date:
+        start_dt = pd.to_datetime(start_date)
+        ff = ff[ff["Date"] >= start_dt]
+    
+    if end_date:
+        end_dt = pd.to_datetime(end_date)
+        ff = ff[ff["Date"] <= end_dt]
+    
+    if ff.empty:
+        return {
+            "total_pnl": 0.0,
+            "daily_pnl": pd.Series(dtype=float),
+            "starting_cash": 0.0,
+            "ending_cash": 0.0,
+            "total_deposits": 0.0,
+            "total_interest": 0.0,
+            "calculation": "No data in specified date range"
+        }
+    
+    # Sort by date
+    ff = ff.sort_values("Date")
+    
+    # Calculate daily PnL
+    ff["DailyPnL"] = (
+        ff["EndingCash"] - 
+        ff["StartingCash"] - 
+        ff["Deposit/Withdrawals"] - 
+        ff["OtherFees"] - 
+        ff["BrokerInterest"]
+    )
+    
+    # Get totals
+    starting_cash = ff["StartingCash"].iloc[0]
+    ending_cash = ff["EndingCash"].iloc[-1]
+    total_deposits = ff["Deposit/Withdrawals"].sum()
+    total_fees = ff["OtherFees"].sum()
+    total_interest = ff["BrokerInterest"].sum()
+    total_pnl = ff["DailyPnL"].sum()
+    
+    # Create daily PnL series
+    daily_pnl = ff.set_index("Date")["DailyPnL"]
+    
+    return {
+        "total_pnl": total_pnl,
+        "daily_pnl": daily_pnl,
+        "starting_cash": starting_cash,
+        "ending_cash": ending_cash,
+        "total_deposits": total_deposits,
+        "total_fees": total_fees,
+        "total_interest": total_interest,
+        "calculation": f"PnL = {ending_cash:,.2f} - {starting_cash:,.2f} - {total_deposits:,.2f} - {total_fees:,.2f} - {total_interest:,.2f} = {total_pnl:,.2f}"
+    }
+
 # ── helpers ───────────────────────────────────────────────────
 def get_account_kpi_series(): return account_kpis()
 def get_strategy_kpi_table(): return strategy_kpis()

@@ -337,6 +337,13 @@ def render():
         daily_pnl = tr.groupby("TradeDate_dt")["NetCash"].sum().sort_index()
 
         net_pnl    = daily_pnl.sum()
+        
+        # Calculate fund flow PnL for comparison
+        from scripts.metrics import calculate_fund_flow_pnl
+        fund_flow_pnl = calculate_fund_flow_pnl(
+            start_date=start_date.strftime('%Y-%m-%d') if start_date else None,
+            end_date=end_date.strftime('%Y-%m-%d') if end_date else None
+        )
         rf_daily   = 0.0
         excess     = daily_pnl - rf_daily
         sharpe     = excess.mean() / (daily_pnl.std(ddof=0) or 1e-9) * np.sqrt(252)
@@ -448,6 +455,56 @@ def render():
                 <div class="metric-value neutral-value">{total_days}</div>
             </div>
             """, unsafe_allow_html=True)
+        
+        # PnL Comparison Section
+        st.markdown('<h3 class="subsection-header">💰 PnL Comparison</h3>', unsafe_allow_html=True)
+        
+        col_pnl1, col_pnl2 = st.columns(2)
+        
+        with col_pnl1:
+            pnl_color = "positive-value" if net_pnl >= 0 else "negative-value"
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📊 Trade-Based P&L</div>
+                <div class="metric-value {pnl_color}">${net_pnl:,.2f}</div>
+                <div class="metric-caption">From trade NetCash data</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_pnl2:
+            ff_pnl_color = "positive-value" if fund_flow_pnl["total_pnl"] >= 0 else "negative-value"
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">🏦 Fund Flow P&L</div>
+                <div class="metric-value {ff_pnl_color}">${fund_flow_pnl["total_pnl"]:,.2f}</div>
+                <div class="metric-caption">From cash flow reconciliation</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Show calculation details in expander
+        with st.expander("📋 Fund Flow PnL Calculation Details"):
+            st.write("**Formula:** PnL = Ending Cash - Starting Cash - Deposits/Withdrawals - OtherFees - Broker Interest")
+            st.write(f"**Calculation:** {fund_flow_pnl['calculation']}")
+            
+            col_detail1, col_detail2, col_detail3, col_detail4, col_detail5 = st.columns(5)
+            with col_detail1:
+                st.metric("Starting Cash", f"${fund_flow_pnl['starting_cash']:,.2f}")
+            with col_detail2:
+                st.metric("Ending Cash", f"${fund_flow_pnl['ending_cash']:,.2f}")
+            with col_detail3:
+                st.metric("Deposits/Withdrawals", f"${fund_flow_pnl['total_deposits']:,.2f}")
+            with col_detail4:
+                st.metric("Other Fees", f"${fund_flow_pnl['total_fees']:,.2f}")
+            with col_detail5:
+                st.metric("Broker Interest", f"${fund_flow_pnl['total_interest']:,.2f}")
+            
+            # Show difference if there is one
+            difference = net_pnl - fund_flow_pnl["total_pnl"]
+            if abs(difference) > 0.01:  # Only show if difference is significant
+                st.warning(f"⚠️ **Difference between calculations:** ${difference:,.2f}")
+                st.info("This difference could be due to timing differences, fees, or other cash flows not captured in trades.")
+            else:
+                st.success("✅ **Calculations match!** Both methods show the same PnL.")
     else:
         st.warning("⚠️ No trading data available for the selected date range.")
 
