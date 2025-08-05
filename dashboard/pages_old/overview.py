@@ -632,10 +632,29 @@ def render():
         nav["Date"] = pd.to_datetime(nav["Date"], dayfirst=True)
         nav_ser = nav.set_index("Date")["NAV"].sort_index()
         
-        # For filtered date ranges, normalize to start at 100
+        # For filtered date ranges, add baseline NAV=100 on day before filter starts (like Strategy/UID pages)
         if start_date is not None and end_date is not None:
-            start_nav_value = nav_ser.iloc[0]
-            nav_ser = (nav_ser / start_nav_value) * 100
+            # Find the most recent NAV before the filter starts (handles weekends/missing data)
+            nav_df["Date"] = pd.to_datetime(nav_df["Date"], dayfirst=True)
+            # Convert start_date to datetime for proper comparison
+            start_datetime = pd.to_datetime(start_date)
+            baseline_nav_data = nav_df[nav_df["Date"] < start_datetime]
+            
+            if not baseline_nav_data.empty:
+                # Get the most recent NAV before the filter starts
+                baseline_nav_data = baseline_nav_data.sort_values("Date")
+                baseline_date = baseline_nav_data.iloc[-1]["Date"]
+                baseline_nav_value = baseline_nav_data.iloc[-1]["NAV"]
+                
+                # Normalize using the baseline NAV
+                nav_ser = (nav_ser / baseline_nav_value) * 100
+                # Add baseline NAV=100 on the baseline date
+                baseline_series = pd.Series([100.0], index=[baseline_date])
+                nav_ser = pd.concat([baseline_series, nav_ser]).sort_index()
+            else:
+                # Fallback to original logic if no baseline found
+                start_nav_value = nav_ser.iloc[0]
+                nav_ser = (nav_ser / start_nav_value) * 100
         
         first_nav = nav_ser.iloc[0]
         current_nav = nav_ser.iloc[-1]
@@ -721,7 +740,7 @@ def render():
         daily_returns = nav_ser.pct_change().dropna()
         
         # Monthly Returns
-        monthly_returns = daily_returns.resample('M').apply(lambda x: (1 + x).prod() - 1)
+        monthly_returns = daily_returns.resample('ME').apply(lambda x: (1 + x).prod() - 1)
         avg_monthly_return = monthly_returns.mean() * 100
         
         # Rolling Returns (7d and 30d)
@@ -868,79 +887,101 @@ def render():
             else:
                 st.info("Cost metrics require trade data.")
             
-            # Rolling Performance Charts
+                        # Rolling Performance Charts
             st.markdown('<h4 class="subsection-header">📈 Rolling Performance Analysis</h4>', unsafe_allow_html=True)
             
             if not filtered_trades.empty:
-                # Calculate rolling metrics using daily PnL
-                daily_pnl_series = filtered_trades.groupby("TradeDate")["NetCash"].sum()
-                daily_pnl_series.index = pd.to_datetime(daily_pnl_series.index, format="%d/%m/%y", dayfirst=True)
-                daily_pnl_series = daily_pnl_series.sort_index()
-                
-                # Calculate rolling metrics
-                rolling_7d_pnl = daily_pnl_series.rolling(7).sum()
-                rolling_30d_pnl = daily_pnl_series.rolling(30).sum()
-                rolling_7d_avg = daily_pnl_series.rolling(7).mean()
-                rolling_30d_avg = daily_pnl_series.rolling(30).mean()
-                
-                # Calculate rolling Sharpe
-                rolling_7d_std = daily_pnl_series.rolling(7).std()
-                rolling_30d_std = daily_pnl_series.rolling(30).std()
-                rolling_7d_sharpe = (rolling_7d_avg / rolling_7d_std) * np.sqrt(252) if rolling_7d_std.mean() > 0 else 0
-                rolling_30d_sharpe = (rolling_30d_avg / rolling_30d_std) * np.sqrt(252) if rolling_30d_std.mean() > 0 else 0
-                
-                # Display rolling charts
-                col_chart1, col_chart2 = st.columns(2)
-                
-                with col_chart1:
-                    st.markdown('<h5 class="subsection-header">📈 7-Day Rolling P&L</h5>', unsafe_allow_html=True)
-                    st.line_chart(rolling_7d_pnl, use_container_width=True)
+                try:
+                    # Calculate rolling metrics using daily PnL
+                    daily_pnl_series = filtered_trades.groupby("TradeDate")["NetCash"].sum()
+                    daily_pnl_series.index = pd.to_datetime(daily_pnl_series.index, format="%d/%m/%y", dayfirst=True)
+                    daily_pnl_series = daily_pnl_series.sort_index()
                     
-                    st.markdown('<h5 class="subsection-header">📈 7-Day Rolling Sharpe</h5>', unsafe_allow_html=True)
-                    st.line_chart(rolling_7d_sharpe, use_container_width=True)
-                
-                with col_chart2:
-                    st.markdown('<h5 class="subsection-header">📈 30-Day Rolling P&L</h5>', unsafe_allow_html=True)
-                    st.line_chart(rolling_30d_pnl, use_container_width=True)
-                    
-                    st.markdown('<h5 class="subsection-header">📈 30-Day Rolling Sharpe</h5>', unsafe_allow_html=True)
-                    st.line_chart(rolling_30d_sharpe, use_container_width=True)
-                
-                # Display current rolling metrics
-                st.markdown('<h5 class="subsection-header">📊 Current Rolling Metrics</h5>', unsafe_allow_html=True)
-                col_roll1, col_roll2, col_roll3, col_roll4 = st.columns(4)
-                with col_roll1:
-                    current_7d_pnl = rolling_7d_pnl.iloc[-1] if not rolling_7d_pnl.empty else 0
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <div class="metric-label">📈 7-Day P&L</div>
-                        <div class="metric-value neutral-value">${current_7d_pnl:,.0f}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col_roll2:
-                    current_30d_pnl = rolling_30d_pnl.iloc[-1] if not rolling_30d_pnl.empty else 0
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <div class="metric-label">📈 30-Day P&L</div>
-                        <div class="metric-value neutral-value">${current_30d_pnl:,.0f}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col_roll3:
-                    current_7d_sharpe = rolling_7d_sharpe.iloc[-1] if not rolling_7d_sharpe.empty else 0
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <div class="metric-label">📊 7-Day Sharpe</div>
-                        <div class="metric-value neutral-value">{current_7d_sharpe:.2f}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col_roll4:
-                    current_30d_sharpe = rolling_30d_sharpe.iloc[-1] if not rolling_30d_sharpe.empty else 0
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <div class="metric-label">📊 30-Day Sharpe</div>
-                        <div class="metric-value neutral-value">{current_30d_sharpe:.2f}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # Only show charts if we have enough data
+                    if len(daily_pnl_series) > 7:
+                        # Calculate rolling metrics
+                        rolling_7d_pnl = daily_pnl_series.rolling(7).sum()
+                        rolling_30d_pnl = daily_pnl_series.rolling(30).sum()
+                        rolling_7d_avg = daily_pnl_series.rolling(7).mean()
+                        rolling_30d_avg = daily_pnl_series.rolling(30).mean()
+                        
+                        # Calculate rolling Sharpe
+                        rolling_7d_std = daily_pnl_series.rolling(7).std()
+                        rolling_30d_std = daily_pnl_series.rolling(30).std()
+                        rolling_7d_sharpe = (rolling_7d_avg / rolling_7d_std) * np.sqrt(252)
+                        rolling_30d_sharpe = (rolling_30d_avg / rolling_30d_std) * np.sqrt(252)
+                        # Handle division by zero by filling NaN values with 0
+                        rolling_7d_sharpe = rolling_7d_sharpe.fillna(0)
+                        rolling_30d_sharpe = rolling_30d_sharpe.fillna(0)
+                        
+                        # Display rolling charts
+                        col_chart1, col_chart2 = st.columns(2)
+                        
+                        with col_chart1:
+                            st.markdown('<h5 class="subsection-header">📈 7-Day Rolling P&L</h5>', unsafe_allow_html=True)
+                            if len(rolling_7d_pnl.dropna()) > 0:
+                                st.line_chart(rolling_7d_pnl, use_container_width=True)
+                            else:
+                                st.info("Insufficient data for 7-day rolling P&L chart")
+                            
+                            st.markdown('<h5 class="subsection-header">📈 7-Day Rolling Sharpe</h5>', unsafe_allow_html=True)
+                            if len(rolling_7d_sharpe.dropna()) > 0:
+                                st.line_chart(rolling_7d_sharpe, use_container_width=True)
+                            else:
+                                st.info("Insufficient data for 7-day rolling Sharpe chart")
+                        
+                        with col_chart2:
+                            st.markdown('<h5 class="subsection-header">📈 30-Day Rolling P&L</h5>', unsafe_allow_html=True)
+                            if len(rolling_30d_pnl.dropna()) > 0:
+                                st.line_chart(rolling_30d_pnl, use_container_width=True)
+                            else:
+                                st.info("Insufficient data for 30-day rolling P&L chart")
+                            
+                            st.markdown('<h5 class="subsection-header">📈 30-Day Rolling Sharpe</h5>', unsafe_allow_html=True)
+                            if len(rolling_30d_sharpe.dropna()) > 0:
+                                st.line_chart(rolling_30d_sharpe, use_container_width=True)
+                            else:
+                                st.info("Insufficient data for 30-day rolling Sharpe chart")
+                        
+                        # Display current rolling metrics
+                        st.markdown('<h5 class="subsection-header">📊 Current Rolling Metrics</h5>', unsafe_allow_html=True)
+                        col_roll1, col_roll2, col_roll3, col_roll4 = st.columns(4)
+                        with col_roll1:
+                            current_7d_pnl = rolling_7d_pnl.iloc[-1] if not rolling_7d_pnl.empty else 0
+                            st.markdown(f"""
+                            <div class="metric-container">
+                                <div class="metric-label">📈 7-Day P&L</div>
+                                <div class="metric-value neutral-value">${current_7d_pnl:,.0f}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        with col_roll2:
+                            current_30d_pnl = rolling_30d_pnl.iloc[-1] if not rolling_30d_pnl.empty else 0
+                            st.markdown(f"""
+                            <div class="metric-container">
+                                <div class="metric-label">📈 30-Day P&L</div>
+                                <div class="metric-value neutral-value">${current_30d_pnl:,.0f}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        with col_roll3:
+                            current_7d_sharpe = rolling_7d_sharpe.iloc[-1] if not rolling_7d_sharpe.empty else 0
+                            st.markdown(f"""
+                            <div class="metric-container">
+                                <div class="metric-label">📊 7-Day Sharpe</div>
+                                <div class="metric-value neutral-value">{current_7d_sharpe:.2f}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        with col_roll4:
+                            current_30d_sharpe = rolling_30d_sharpe.iloc[-1] if not rolling_30d_sharpe.empty else 0
+                            st.markdown(f"""
+                            <div class="metric-container">
+                                <div class="metric-label">📊 30-Day Sharpe</div>
+                                <div class="metric-value neutral-value">{current_30d_sharpe:.2f}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    else:
+                        st.info("Insufficient data for rolling performance charts in selected period.")
+                except Exception as e:
+                    st.info("Insufficient data for rolling performance charts in selected period.")
             else:
                 st.info("Rolling performance charts require trade data.")
     else:
@@ -1042,30 +1083,42 @@ def render():
         
         # Rolling Drawdown Analysis
         st.markdown('<h3 class="subsection-header">📉 Rolling Drawdown Analysis</h3>', unsafe_allow_html=True)
-        broker_balance = filtered_tl.set_index("Date")["BrokerBalance"]
-        drawdown = (broker_balance / broker_balance.cummax() - 1) * 100
         
-        fig_dd = px.area(drawdown, title="Rolling Drawdown (%)")
-        fig_dd.update_layout(
-            xaxis_title="Date",
-            yaxis_title="Drawdown (%)",
-            height=400,
-            showlegend=False
-        )
-        st.plotly_chart(fig_dd, use_container_width=True)
+        # Check if we have enough data for charts
+        if len(filtered_tl) > 1:
+            try:
+                broker_balance = filtered_tl.set_index("Date")["BrokerBalance"]
+                drawdown = (broker_balance / broker_balance.cummax() - 1) * 100
+                
+                fig_dd = px.area(drawdown, title="Rolling Drawdown (%)")
+                fig_dd.update_layout(
+                    xaxis_title="Date",
+                    yaxis_title="Drawdown (%)",
+                    height=400,
+                    showlegend=False
+                )
+                st.plotly_chart(fig_dd, use_container_width=True)
+            except Exception as e:
+                st.info("Insufficient data for drawdown chart in selected period.")
 
-        # Margin Headroom Analysis
-        st.markdown('<h3 class="subsection-header">🛡️ Margin Headroom Analysis</h3>', unsafe_allow_html=True)
-        headroom = filtered_tl["SpareCapital"] / filtered_tl["BrokerBalance"] * 100
-        
-        fig_headroom = px.line(filtered_tl, x="Date", y=headroom, title="Margin Headroom (%)")
-        fig_headroom.update_layout(
-            xaxis_title="Date",
-            yaxis_title="Spare Capital / Broker Balance (%)",
-            height=400,
-            showlegend=False
-        )
-        st.plotly_chart(fig_headroom, use_container_width=True)
+            # Margin Headroom Analysis
+            st.markdown('<h3 class="subsection-header">🛡️ Margin Headroom Analysis</h3>', unsafe_allow_html=True)
+            
+            try:
+                headroom = filtered_tl["SpareCapital"] / filtered_tl["BrokerBalance"] * 100
+                
+                fig_headroom = px.line(filtered_tl, x="Date", y=headroom, title="Margin Headroom (%)")
+                fig_headroom.update_layout(
+                    xaxis_title="Date",
+                    yaxis_title="Spare Capital / Broker Balance (%)",
+                    height=400,
+                    showlegend=False
+                )
+                st.plotly_chart(fig_headroom, use_container_width=True)
+            except Exception as e:
+                st.info("Insufficient data for margin headroom chart in selected period.")
+        else:
+            st.info("Insufficient data for charts in selected period.")
     else:
         st.warning("⚠️ No timeline or NAV data available for risk analysis.")
 

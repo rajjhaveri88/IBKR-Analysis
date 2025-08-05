@@ -77,7 +77,10 @@ def render() -> None:
         
         with col_chart1:
             st.subheader("30-Day Rolling Net Flow")
-            st.line_chart(rolling_30d_flow, use_container_width=True)
+            if len(rolling_30d_flow.dropna()) > 0:
+                st.line_chart(rolling_30d_flow, use_container_width=True)
+            else:
+                st.info("Insufficient data for 30-day rolling flow chart")
         
         with col_chart2:
             st.subheader("Cash Flow Distribution")
