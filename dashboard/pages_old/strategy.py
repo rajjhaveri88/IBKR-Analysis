@@ -954,32 +954,36 @@ def render_consolidated_view(full_trades_df, strategies, timeline_df, filtered_t
         with col1:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Total Net P&L</div>
+                <div class="metric-label">💵 Total Net P&L</div>
                 <div class="metric-value {'positive-value' if total_pnl > 0 else 'negative-value'}">{total_pnl:,.0f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all strategy P&L</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Average Sharpe</div>
+                <div class="metric-label">📊 Average Sharpe</div>
                 <div class="metric-value {'positive-value' if avg_sharpe > 0 else 'negative-value'}">{avg_sharpe:.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Average of all strategy Sharpe ratios</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col3:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Total Trades</div>
+                <div class="metric-label">📈 Total Trades</div>
                 <div class="metric-value neutral-value">{total_trades}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all strategy trades</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col4:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Overall Win Rate</div>
+                <div class="metric-label">🎯 Overall Win Rate</div>
                 <div class="metric-value">{overall_win_rate:.1f} %</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total winning trades / Total trades × 100</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -988,24 +992,27 @@ def render_consolidated_view(full_trades_df, strategies, timeline_df, filtered_t
         with col5:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Win/Loss Trades</div>
+                <div class="metric-label">✅❌ Win/Loss Trades</div>
                 <div class="metric-value neutral-value">{total_win_trades}/{total_loss_trades}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total winning / Total losing trades</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col6:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Total Slippage</div>
+                <div class="metric-label">💰 Total Slippage</div>
                 <div class="metric-value neutral-value">{total_slippage:,.0f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all strategy slippage costs</div>
             </div>
             """, unsafe_allow_html=True)
         
         with col7:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Avg Slippage %</div>
+                <div class="metric-label">📊 Avg Slippage %</div>
                 <div class="metric-value neutral-value">{avg_slippage_pct:.2f} %</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Average slippage percentage across strategies</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -1124,8 +1131,21 @@ def render_consolidated_view(full_trades_df, strategies, timeline_df, filtered_t
         with col8:
             st.markdown(f"""
             <div class="metric-container">
-                <div class="metric-label">Total Strategies</div>
+                <div class="metric-label">📊 Total Strategies</div>
                 <div class="metric-value neutral-value">{total_strategies}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Number of unique strategies</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Add IB Commission metric
+        col9, col10, col11, col12 = st.columns(4)
+        
+        with col9:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">💳 Total IB Commission</div>
+                <div class="metric-value neutral-value">${total_ib_commission:,.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all strategy IB commissions</div>
             </div>
             """, unsafe_allow_html=True)
         
