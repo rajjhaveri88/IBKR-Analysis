@@ -171,8 +171,10 @@ def render():
         filtered_nav = nav_df
         filtered_fund_flow = fund_flow
 
-    # Capital Allocation Overview
-    st.markdown('<h2 class="section-header">💰 Capital Allocation Overview</h2>', unsafe_allow_html=True)
+    # ============================================================================
+    # SECTION 1: PORTFOLIO OVERVIEW & CAPITAL ALLOCATION
+    # ============================================================================
+    st.markdown('<h2 class="section-header">💰 Portfolio Overview & Capital Allocation</h2>', unsafe_allow_html=True)
     
     if not filtered_tl.empty:
         # Prepare timeline & compute allocations/spare
@@ -183,6 +185,60 @@ def render():
         # Calculate total allocation and spare capital
         filtered_tl["TotalAllocation"] = filtered_tl[alloc_cols].sum(axis=1)
         filtered_tl["SpareCapital"] = filtered_tl["BrokerBalance"] - filtered_tl["TotalAllocation"]
+        
+        # Current Capital Status
+        st.markdown('<h3 class="subsection-header">💼 Current Capital Status</h3>', unsafe_allow_html=True)
+        
+        today = filtered_tl.iloc[-1]
+        spare = today["SpareCapital"]
+        total_alloc = today["TotalAllocation"]
+        broker = today["BrokerBalance"]
+        
+        # Calculate total interest from filtered fund flow
+        total_interest = 0
+        if not filtered_fund_flow.empty:
+            total_interest = filtered_fund_flow["BrokerInterest"].sum()
+        
+        # Display metrics in a professional grid
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">💰 Spare Capital</div>
+                <div class="metric-value">${spare:,.0f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Broker Balance - Total Allocation</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📈 Total Allocated</div>
+                <div class="metric-value">${total_alloc:,.0f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all strategy allocations</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">🏦 Broker Balance</div>
+                <div class="metric-value">${broker:,.0f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total account balance</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">💵 Total Interest</div>
+                <div class="metric-value">${total_interest:,.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Cumulative broker interest earned</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.caption(f"*Data as of {today['Date'].strftime('%d‑%b‑%Y')}*")
         
         # Capital Allocation Chart
         st.markdown('<h3 class="subsection-header">📊 Capital Allocation Timeline</h3>', unsafe_allow_html=True)
@@ -274,60 +330,12 @@ def render():
         )
         
         st.plotly_chart(fig, use_container_width=True)
-
-        # Current Capital Metrics
-        st.markdown('<h3 class="subsection-header">💼 Current Capital Status</h3>', unsafe_allow_html=True)
-        
-        today = filtered_tl.iloc[-1]
-        spare = today["SpareCapital"]
-        total_alloc = today["TotalAllocation"]
-        broker = today["BrokerBalance"]
-        
-        # Calculate total interest from filtered fund flow
-        total_interest = 0
-        if not filtered_fund_flow.empty:
-            total_interest = filtered_fund_flow["BrokerInterest"].sum()
-        
-        # Display metrics in a professional grid
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">💰 Spare Capital</div>
-                <div class="metric-value">${spare:,.0f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📈 Total Allocated</div>
-                <div class="metric-value">${total_alloc:,.0f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">🏦 Broker Balance</div>
-                <div class="metric-value">${broker:,.0f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">💵 Total Interest</div>
-                <div class="metric-value">${total_interest:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.caption(f"*Data as of {today['Date'].strftime('%d‑%b‑%Y')}*")
     else:
         st.warning("⚠️ No timeline data available for the selected date range.")
 
-    # Trading Performance Metrics
+    # ============================================================================
+    # SECTION 2: TRADING PERFORMANCE ANALYSIS
+    # ============================================================================
     st.markdown('<h2 class="section-header">📊 Trading Performance Analysis</h2>', unsafe_allow_html=True)
     
     if not filtered_trades.empty:
@@ -368,8 +376,8 @@ def render():
                 loss_trades += cnt
         win_trades_pct = (win_trades / total_trades * 100) if total_trades > 0 else 0
 
-        # Performance Metrics Grid
-        st.markdown('<h3 class="subsection-header">🎯 Key Performance Indicators</h3>', unsafe_allow_html=True)
+        # Core Performance Metrics
+        st.markdown('<h3 class="subsection-header">🎯 Core Performance Metrics</h3>', unsafe_allow_html=True)
         
         # Row 1: Core Performance Metrics
         col1, col2, col3 = st.columns(3)
@@ -380,6 +388,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">💵 Net P&L</div>
                 <div class="metric-value {pnl_color}">${net_pnl:,.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">From trade NetCash data</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -389,6 +398,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📈 Sharpe Ratio</div>
                 <div class="metric-value {sharpe_color}">{sharpe:.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Daily P&L excess return / volatility × √252</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -399,6 +409,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">⚖️ Profit Factor</div>
                 <div class="metric-value {pf_color}">{pf_display}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Gross wins / Gross losses</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -410,6 +421,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📅 Win/Loss Days</div>
                 <div class="metric-value neutral-value">{win_days} / {loss_days}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Days with positive/negative daily P&L</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -418,6 +430,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📊 Win Days %</div>
                 <div class="metric-value neutral-value">{win_days_pct:.1f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Win days / Total trading days</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -426,6 +439,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">🎯 Win/Loss Trades</div>
                 <div class="metric-value neutral-value">{win_trades} / {loss_trades}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Individual profitable/unprofitable trades</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -437,6 +451,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📈 Win Trades %</div>
                 <div class="metric-value neutral-value">{win_trades_pct:.1f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Win trades / Total trades</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -445,6 +460,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">🔄 Total Trades</div>
                 <div class="metric-value neutral-value">{total_trades}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Count of individual trade executions</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -453,11 +469,12 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📊 Trading Days</div>
                 <div class="metric-value neutral-value">{total_days}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Days with trading activity</div>
             </div>
             """, unsafe_allow_html=True)
         
-        # PnL Comparison Section
-        st.markdown('<h3 class="subsection-header">💰 PnL Comparison</h3>', unsafe_allow_html=True)
+        # PnL Reconciliation Section
+        st.markdown('<h3 class="subsection-header">💰 PnL Reconciliation</h3>', unsafe_allow_html=True)
         
         col_pnl1, col_pnl2 = st.columns(2)
         
@@ -482,21 +499,47 @@ def render():
             """, unsafe_allow_html=True)
         
         # Show calculation details in expander
-        with st.expander("📋 Fund Flow PnL Calculation Details"):
+        with st.expander("📋 Fund Flow PnL Calculation Details", expanded=False):
+            st.markdown('<h4 class="subsection-header">📊 Calculation Breakdown</h4>', unsafe_allow_html=True)
             st.write("**Formula:** PnL = Ending Cash - Starting Cash - Deposits/Withdrawals - OtherFees - Broker Interest")
             st.write(f"**Calculation:** {fund_flow_pnl['calculation']}")
             
             col_detail1, col_detail2, col_detail3, col_detail4, col_detail5 = st.columns(5)
             with col_detail1:
-                st.metric("Starting Cash", f"${fund_flow_pnl['starting_cash']:,.2f}")
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">💰 Starting Cash</div>
+                    <div class="metric-value neutral-value">${fund_flow_pnl['starting_cash']:,.2f}</div>
+                </div>
+                """, unsafe_allow_html=True)
             with col_detail2:
-                st.metric("Ending Cash", f"${fund_flow_pnl['ending_cash']:,.2f}")
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">💰 Ending Cash</div>
+                    <div class="metric-value neutral-value">${fund_flow_pnl['ending_cash']:,.2f}</div>
+                </div>
+                """, unsafe_allow_html=True)
             with col_detail3:
-                st.metric("Deposits/Withdrawals", f"${fund_flow_pnl['total_deposits']:,.2f}")
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">💸 Deposits/Withdrawals</div>
+                    <div class="metric-value neutral-value">${fund_flow_pnl['total_deposits']:,.2f}</div>
+                </div>
+                """, unsafe_allow_html=True)
             with col_detail4:
-                st.metric("Other Fees", f"${fund_flow_pnl['total_fees']:,.2f}")
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">💸 Other Fees</div>
+                    <div class="metric-value neutral-value">${fund_flow_pnl['total_fees']:,.2f}</div>
+                </div>
+                """, unsafe_allow_html=True)
             with col_detail5:
-                st.metric("Broker Interest", f"${fund_flow_pnl['total_interest']:,.2f}")
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">💵 Broker Interest</div>
+                    <div class="metric-value neutral-value">${fund_flow_pnl['total_interest']:,.2f}</div>
+                </div>
+                """, unsafe_allow_html=True)
             
             # Show difference if there is one
             difference = net_pnl - fund_flow_pnl["total_pnl"]
@@ -505,10 +548,83 @@ def render():
                 st.info("This difference could be due to timing differences, fees, or other cash flows not captured in trades.")
             else:
                 st.success("✅ **Calculations match!** Both methods show the same PnL.")
+        
+        # Trading Efficiency Metrics
+        st.markdown('<h3 class="subsection-header">📊 Trading Efficiency Metrics</h3>', unsafe_allow_html=True)
+        
+        # Calculate additional efficiency metrics
+        avg_trade_return = net_pnl / total_trades if total_trades > 0 else 0
+        avg_win_amount = gross_win / win_days if win_days > 0 else 0
+        avg_loss_amount = gross_loss / loss_days if loss_days > 0 else 0
+        expectancy = (win_trades_pct/100 * avg_win_amount) - ((100-win_trades_pct)/100 * avg_loss_amount)
+        
+        # Row 1: Efficiency Metrics
+        col_eff1, col_eff2, col_eff3 = st.columns(3)
+        
+        with col_eff1:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📈 Avg Trade Return</div>
+                <div class="metric-value neutral-value">${avg_trade_return:,.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Net P&L / Total trades</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_eff2:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">💰 Avg Win Amount</div>
+                <div class="metric-value positive-value">${avg_win_amount:,.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Gross wins / Win days</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_eff3:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">💸 Avg Loss Amount</div>
+                <div class="metric-value negative-value">${avg_loss_amount:,.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Gross losses / Loss days</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Row 2: Additional Efficiency Metrics
+        col_eff4, col_eff5, col_eff6 = st.columns(3)
+        
+        with col_eff4:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📊 Expectancy per Trade</div>
+                <div class="metric-value neutral-value">${expectancy:,.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">(Win% × Avg Win) - (Loss% × Avg Loss)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_eff5:
+            rr_ratio = avg_win_amount / avg_loss_amount if avg_loss_amount > 0 else 0
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">⚖️ Reward/Risk Ratio</div>
+                <div class="metric-value neutral-value">{rr_ratio:.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Avg Win / Avg Loss</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_eff6:
+            breakeven_win_pct = 1 / (1 + rr_ratio) * 100 if rr_ratio > 0 else 0
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">🎯 Break-even Win %</div>
+                <div class="metric-value neutral-value">{breakeven_win_pct:.1f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">1 / (1 + Reward/Risk ratio)</div>
+            </div>
+            """, unsafe_allow_html=True)
     else:
         st.warning("⚠️ No trading data available for the selected date range.")
 
-    # NAV Performance Analysis
+    # ============================================================================
+    # SECTION 3: NAV PERFORMANCE ANALYSIS
+    # ============================================================================
     st.markdown('<h2 class="section-header">📈 NAV Performance Analysis</h2>', unsafe_allow_html=True)
     
     if not filtered_nav.empty:
@@ -532,7 +648,7 @@ def render():
         days = (nav_ser.index[-1] - nav_ser.index[0]).days
         cagr = ((current_nav/first_nav) ** (365.25/days) - 1) if days>0 else np.nan
 
-        # NAV Metrics Grid
+        # NAV Key Metrics
         st.markdown('<h3 class="subsection-header">📊 NAV Key Metrics</h3>', unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns(3)
@@ -543,6 +659,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📈 Current NAV</div>
                 <div class="metric-value {nav_color}">{current_nav:,.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Latest NAV value from portfolio data</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -551,6 +668,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">🏆 Max NAV</div>
                 <div class="metric-value neutral-value">{max_nav:,.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Highest NAV value achieved</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -560,6 +678,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📉 Current Drawdown</div>
                 <div class="metric-value {dd_color}">{current_dd*100:,.2f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">(Current NAV / Max NAV) - 1</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -571,6 +690,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📉 Max Drawdown</div>
                 <div class="metric-value {max_dd_color}">{max_dd*100:,.2f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Largest peak-to-trough decline</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -581,6 +701,7 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📊 CAGR</div>
                 <div class="metric-value {cagr_color}">{cagr_display}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Compound annual growth rate</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -589,10 +710,99 @@ def render():
             <div class="metric-container">
                 <div class="metric-label">📅 Analysis Period</div>
                 <div class="metric-value neutral-value">{days} days</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total days in analysis period</div>
             </div>
             """, unsafe_allow_html=True)
 
-        # NAV Chart
+        # Return-Based Metrics
+        st.markdown('<h3 class="subsection-header">📈 Return-Based Metrics</h3>', unsafe_allow_html=True)
+        
+        # Calculate additional return metrics using existing logic patterns
+        daily_returns = nav_ser.pct_change().dropna()
+        
+        # Monthly Returns
+        monthly_returns = daily_returns.resample('M').apply(lambda x: (1 + x).prod() - 1)
+        avg_monthly_return = monthly_returns.mean() * 100
+        
+        # Rolling Returns (7d and 30d)
+        rolling_7d = daily_returns.rolling(7).apply(lambda x: (1 + x).prod() - 1)
+        rolling_30d = daily_returns.rolling(30).apply(lambda x: (1 + x).prod() - 1)
+        current_7d_return = rolling_7d.iloc[-1] * 100 if not rolling_7d.empty else 0
+        current_30d_return = rolling_30d.iloc[-1] * 100 if not rolling_30d.empty else 0
+        
+        # Annualized Volatility
+        annualized_vol = daily_returns.std() * np.sqrt(252) * 100
+        
+        # Sortino Ratio (using existing logic pattern)
+        downside_returns = daily_returns[daily_returns < 0]
+        downside_vol = downside_returns.std() * np.sqrt(252) if len(downside_returns) > 0 else 1e-9
+        sortino_ratio = (daily_returns.mean() * 252) / downside_vol if downside_vol > 0 else 0
+        
+        # Return Over Max Drawdown
+        return_over_dd = (cagr / abs(max_dd)) if max_dd != 0 else np.nan
+        
+        # Row 1: Return Metrics
+        col_r1, col_r2, col_r3 = st.columns(3)
+        
+        with col_r1:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📊 Avg Monthly Return</div>
+                <div class="metric-value neutral-value">{avg_monthly_return:.2f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Average monthly NAV return</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_r2:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📈 7-Day Rolling Return</div>
+                <div class="metric-value neutral-value">{current_7d_return:.2f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">7-day cumulative NAV return</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_r3:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📈 30-Day Rolling Return</div>
+                <div class="metric-value neutral-value">{current_30d_return:.2f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">30-day cumulative NAV return</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Row 2: Additional Return Metrics
+        col_r4, col_r5, col_r6 = st.columns(3)
+        
+        with col_r4:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📊 Annualized Volatility</div>
+                <div class="metric-value neutral-value">{annualized_vol:.2f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Daily NAV return std × √252</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_r5:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📈 Sortino Ratio</div>
+                <div class="metric-value neutral-value">{sortino_ratio:.2f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Return / Downside volatility</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_r6:
+            rodd_display = f"{return_over_dd:.2f}" if not np.isnan(return_over_dd) else "N/A"
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📊 Return/Max DD</div>
+                <div class="metric-value neutral-value">{rodd_display}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">CAGR / Max drawdown</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # NAV Performance Chart
         st.markdown('<h3 class="subsection-header">📈 NAV Performance Chart</h3>', unsafe_allow_html=True)
         
         fig_nav = px.line(nav_ser, title="NAV Performance Over Time")
@@ -606,14 +816,232 @@ def render():
     else:
         st.warning("⚠️ No NAV data available for the selected date range.")
 
-    # Risk Analysis
-    st.markdown('<h2 class="section-header">⚠️ Risk Analysis</h2>', unsafe_allow_html=True)
+    # ============================================================================
+    # SECTION 4: ADVANCED PERFORMANCE METRICS
+    # ============================================================================
+    if not filtered_nav.empty or not filtered_trades.empty:
+        with st.expander("📊 Advanced Performance Metrics", expanded=False):
+            st.markdown('<h4 class="subsection-header">🧮 Cost Analysis</h4>', unsafe_allow_html=True)
+            
+            # Cost Metrics
+            st.markdown('<h5 class="subsection-header">💰 Transaction Costs</h5>', unsafe_allow_html=True)
+            
+            if not filtered_trades.empty:
+                # Calculate cost metrics using existing logic patterns
+                tr = filtered_trades.copy()
+                
+                # Total Transaction Costs (using slippage data)
+                total_slippage = tr["Slippage"].sum() if "Slippage" in tr.columns else 0
+                
+                # Cost-to-Return Ratio
+                cost_return_ratio = (total_slippage / net_pnl * 100) if net_pnl != 0 else 0
+                
+                # Average Cost per Trade
+                avg_cost_per_trade = total_slippage / total_trades if total_trades > 0 else 0
+                
+                # Display Cost Metrics
+                col_cost1, col_cost2, col_cost3 = st.columns(3)
+                with col_cost1:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">💰 Total Slippage</div>
+                        <div class="metric-value neutral-value">${total_slippage:,.2f}</div>
+                        <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all trade slippage costs</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_cost2:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">📊 Cost/Return Ratio</div>
+                        <div class="metric-value neutral-value">{cost_return_ratio:.2f}%</div>
+                        <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Slippage / Net P&L × 100</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_cost3:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">💸 Avg Cost per Trade</div>
+                        <div class="metric-value neutral-value">${avg_cost_per_trade:,.2f}</div>
+                        <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total slippage / Total trades</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("Cost metrics require trade data.")
+            
+            # Rolling Performance Charts
+            st.markdown('<h4 class="subsection-header">📈 Rolling Performance Analysis</h4>', unsafe_allow_html=True)
+            
+            if not filtered_trades.empty:
+                # Calculate rolling metrics using daily PnL
+                daily_pnl_series = filtered_trades.groupby("TradeDate")["NetCash"].sum()
+                daily_pnl_series.index = pd.to_datetime(daily_pnl_series.index, format="%d/%m/%y", dayfirst=True)
+                daily_pnl_series = daily_pnl_series.sort_index()
+                
+                # Calculate rolling metrics
+                rolling_7d_pnl = daily_pnl_series.rolling(7).sum()
+                rolling_30d_pnl = daily_pnl_series.rolling(30).sum()
+                rolling_7d_avg = daily_pnl_series.rolling(7).mean()
+                rolling_30d_avg = daily_pnl_series.rolling(30).mean()
+                
+                # Calculate rolling Sharpe
+                rolling_7d_std = daily_pnl_series.rolling(7).std()
+                rolling_30d_std = daily_pnl_series.rolling(30).std()
+                rolling_7d_sharpe = (rolling_7d_avg / rolling_7d_std) * np.sqrt(252) if rolling_7d_std.mean() > 0 else 0
+                rolling_30d_sharpe = (rolling_30d_avg / rolling_30d_std) * np.sqrt(252) if rolling_30d_std.mean() > 0 else 0
+                
+                # Display rolling charts
+                col_chart1, col_chart2 = st.columns(2)
+                
+                with col_chart1:
+                    st.markdown('<h5 class="subsection-header">📈 7-Day Rolling P&L</h5>', unsafe_allow_html=True)
+                    st.line_chart(rolling_7d_pnl, use_container_width=True)
+                    
+                    st.markdown('<h5 class="subsection-header">📈 7-Day Rolling Sharpe</h5>', unsafe_allow_html=True)
+                    st.line_chart(rolling_7d_sharpe, use_container_width=True)
+                
+                with col_chart2:
+                    st.markdown('<h5 class="subsection-header">📈 30-Day Rolling P&L</h5>', unsafe_allow_html=True)
+                    st.line_chart(rolling_30d_pnl, use_container_width=True)
+                    
+                    st.markdown('<h5 class="subsection-header">📈 30-Day Rolling Sharpe</h5>', unsafe_allow_html=True)
+                    st.line_chart(rolling_30d_sharpe, use_container_width=True)
+                
+                # Display current rolling metrics
+                st.markdown('<h5 class="subsection-header">📊 Current Rolling Metrics</h5>', unsafe_allow_html=True)
+                col_roll1, col_roll2, col_roll3, col_roll4 = st.columns(4)
+                with col_roll1:
+                    current_7d_pnl = rolling_7d_pnl.iloc[-1] if not rolling_7d_pnl.empty else 0
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">📈 7-Day P&L</div>
+                        <div class="metric-value neutral-value">${current_7d_pnl:,.0f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_roll2:
+                    current_30d_pnl = rolling_30d_pnl.iloc[-1] if not rolling_30d_pnl.empty else 0
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">📈 30-Day P&L</div>
+                        <div class="metric-value neutral-value">${current_30d_pnl:,.0f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_roll3:
+                    current_7d_sharpe = rolling_7d_sharpe.iloc[-1] if not rolling_7d_sharpe.empty else 0
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">📊 7-Day Sharpe</div>
+                        <div class="metric-value neutral-value">{current_7d_sharpe:.2f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_roll4:
+                    current_30d_sharpe = rolling_30d_sharpe.iloc[-1] if not rolling_30d_sharpe.empty else 0
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-label">📊 30-Day Sharpe</div>
+                        <div class="metric-value neutral-value">{current_30d_sharpe:.2f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.info("Rolling performance charts require trade data.")
+    else:
+        st.warning("⚠️ No NAV data available for the selected date range.")
+
+    # ============================================================================
+    # SECTION 5: RISK ANALYSIS
+    # ============================================================================
+    st.markdown('<h2 class="section-header">🛡️ Risk Analysis</h2>', unsafe_allow_html=True)
     
-    if not filtered_tl.empty:
+    if not filtered_tl.empty and not filtered_nav.empty:
+        # Calculate risk metrics using existing logic patterns
+        daily_returns = nav_ser.pct_change().dropna()
+        
+        # Average Drawdown
+        drawdown_episodes = dd_ser[dd_ser < 0]
+        avg_drawdown = drawdown_episodes.mean() * 100 if len(drawdown_episodes) > 0 else 0
+        
+        # Drawdown Duration (simplified calculation)
+        peak_indices = (dd_ser == 0).astype(int)
+        recovery_periods = peak_indices.groupby(peak_indices.cumsum()).cumcount()
+        max_dd_duration = recovery_periods.max()
+        
+        # Value at Risk (95% confidence)
+        var_95 = np.percentile(daily_returns, 5) * 100
+        
+        # Expected Shortfall (CVaR)
+        cvar_95 = daily_returns[daily_returns <= np.percentile(daily_returns, 5)].mean() * 100
+        
+        # Kelly Criterion (simplified)
+        win_rate = len(daily_returns[daily_returns > 0]) / len(daily_returns)
+        avg_win = daily_returns[daily_returns > 0].mean()
+        avg_loss = abs(daily_returns[daily_returns < 0].mean())
+        rr_ratio = avg_win / avg_loss if avg_loss != 0 else 0
+        kelly = win_rate - ((1 - win_rate) / rr_ratio) if rr_ratio > 0 else 0
+        
+        # Risk Metrics
         st.markdown('<h3 class="subsection-header">📊 Risk Metrics</h3>', unsafe_allow_html=True)
         
-        # Rolling Drawdown
-        st.markdown('<h4 class="subsection-header">📉 Rolling Drawdown Analysis</h4>', unsafe_allow_html=True)
+        # Row 1: Core Risk Metrics
+        col_risk1, col_risk2, col_risk3 = st.columns(3)
+        
+        with col_risk1:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📉 Average Drawdown</div>
+                <div class="metric-value negative-value">{avg_drawdown:.2f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Mean of all drawdown periods</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_risk2:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">⏱️ Max DD Duration</div>
+                <div class="metric-value neutral-value">{max_dd_duration} days</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Longest recovery period</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_risk3:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">📊 Win Rate</div>
+                <div class="metric-value neutral-value">{win_rate*100:.1f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Days with positive NAV returns</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Row 2: Advanced Risk Metrics
+        col_risk4, col_risk5, col_risk6 = st.columns(3)
+        
+        with col_risk4:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">⚠️ VaR (95%)</div>
+                <div class="metric-value negative-value">{var_95:.2f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">95th percentile of daily returns</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_risk5:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">⚠️ CVaR (95%)</div>
+                <div class="metric-value negative-value">{cvar_95:.2f}%</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Expected loss beyond VaR</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col_risk6:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">🎯 Kelly Criterion</div>
+                <div class="metric-value neutral-value">{kelly:.3f}</div>
+                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Optimal leverage ratio</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Rolling Drawdown Analysis
+        st.markdown('<h3 class="subsection-header">📉 Rolling Drawdown Analysis</h3>', unsafe_allow_html=True)
         broker_balance = filtered_tl.set_index("Date")["BrokerBalance"]
         drawdown = (broker_balance / broker_balance.cummax() - 1) * 100
         
@@ -626,8 +1054,8 @@ def render():
         )
         st.plotly_chart(fig_dd, use_container_width=True)
 
-        # Margin Headroom
-        st.markdown('<h4 class="subsection-header">🛡️ Margin Headroom Analysis</h4>', unsafe_allow_html=True)
+        # Margin Headroom Analysis
+        st.markdown('<h3 class="subsection-header">🛡️ Margin Headroom Analysis</h3>', unsafe_allow_html=True)
         headroom = filtered_tl["SpareCapital"] / filtered_tl["BrokerBalance"] * 100
         
         fig_headroom = px.line(filtered_tl, x="Date", y=headroom, title="Margin Headroom (%)")
@@ -639,7 +1067,7 @@ def render():
         )
         st.plotly_chart(fig_headroom, use_container_width=True)
     else:
-        st.warning("⚠️ No timeline data available for risk analysis.")
+        st.warning("⚠️ No timeline or NAV data available for risk analysis.")
 
     # Footer
     st.markdown("---")
