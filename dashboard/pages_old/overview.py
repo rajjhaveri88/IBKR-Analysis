@@ -117,7 +117,8 @@ def render():
         "Custom Range":  "custom"
     }
     
-    choice = st.selectbox("Date Range", list(presets.keys()), index=0)
+    # Primary Period Selection
+    choice = st.selectbox("Primary Period", list(presets.keys()), index=0)
     if choice == "Custom Range":
         c1, c2 = st.columns(2)
         start_date = c1.date_input("Start Date", value=None)
@@ -131,7 +132,44 @@ def render():
             days_back = int(days_back)
             end_date   = pd.Timestamp.now().date()
             start_date = end_date - pd.Timedelta(days=days_back)
-            st.info(f"📅 {choice}: {start_date} to {end_date}")
+            st.info(f"📅 Primary Period: {choice}: {start_date} to {end_date}")
+    
+    # Comparison Period Selection
+    comparison_enabled = st.checkbox("📊 Enable Period Comparison", value=False)
+    
+    if comparison_enabled:
+        st.markdown("---")
+        st.markdown('<h4 class="subsection-header">📊 Comparison Period</h4>', unsafe_allow_html=True)
+        
+        # Calculate comparison period based on primary period
+        if choice != "Custom Range" and choice != "All to Date":
+            comparison_choice = st.selectbox(
+                "Comparison Period", 
+                ["Previous Period", "Same Period Last Year", "Custom Comparison"],
+                index=0
+            )
+            
+            if comparison_choice == "Previous Period":
+                # Same duration, but shifted back by the same number of days
+                comp_end_date = start_date - pd.Timedelta(days=1)
+                comp_start_date = comp_end_date - pd.Timedelta(days=days_back)
+                st.info(f"📅 Comparison Period: {comp_start_date} to {comp_end_date}")
+                
+            elif comparison_choice == "Same Period Last Year":
+                # Same dates but one year ago
+                comp_start_date = start_date - pd.Timedelta(days=365)
+                comp_end_date = end_date - pd.Timedelta(days=365)
+                st.info(f"📅 Comparison Period: {comp_start_date} to {comp_end_date}")
+                
+            else:  # Custom Comparison
+                c3, c4 = st.columns(2)
+                comp_start_date = c3.date_input("Comparison Start Date", value=None)
+                comp_end_date = c4.date_input("Comparison End Date", value=None)
+        else:
+            # For custom or all-to-date, only allow custom comparison
+            c3, c4 = st.columns(2)
+            comp_start_date = c3.date_input("Comparison Start Date", value=None)
+            comp_end_date = c4.date_input("Comparison End Date", value=None)
 
     # Load data
     timeline = load_timeline()
@@ -139,37 +177,88 @@ def render():
     nav_df = load_nav()
     fund_flow = load_fund_flow()
 
-    # Filter data based on date range (using same pattern as Strategy page)
+    # Helper function to filter data by date range
+    def filter_data_by_dates(data, date_col, start_date, end_date):
+        """Filter data by date range"""
+        if start_date and end_date:
+            data_copy = data.copy()
+            data_copy["_dt"] = pd.to_datetime(data_copy[date_col], dayfirst=True)
+            filtered = data_copy[(data_copy["_dt"].dt.date >= start_date) & 
+                                (data_copy["_dt"].dt.date <= end_date)].copy()
+            filtered.drop("_dt", axis=1, inplace=True)
+            return filtered
+        else:
+            return data
+
+    # Filter primary period data
     if 'start_date' in locals() and start_date and end_date:
-        # Filter timeline
-        timeline["_dt"] = pd.to_datetime(timeline["Date"], dayfirst=True)
-        filtered_tl = timeline[(timeline["_dt"].dt.date >= start_date) & 
-                              (timeline["_dt"].dt.date <= end_date)].copy()
-        filtered_tl.drop("_dt", axis=1, inplace=True)
-        
-        # Filter trades
-        trades["_dt"] = pd.to_datetime(trades["TradeDate"], format="%d/%m/%y", dayfirst=True)
-        filtered_trades = trades[(trades["_dt"].dt.date >= start_date) & 
-                                (trades["_dt"].dt.date <= end_date)].copy()
-        filtered_trades.drop("_dt", axis=1, inplace=True)
-        
-        # Filter NAV
-        nav_df["_dt"] = pd.to_datetime(nav_df["Date"], dayfirst=True)
-        filtered_nav = nav_df[(nav_df["_dt"].dt.date >= start_date) & 
-                             (nav_df["_dt"].dt.date <= end_date)].copy()
-        filtered_nav.drop("_dt", axis=1, inplace=True)
-        
-        # Filter fund flow
-        fund_flow["_dt"] = pd.to_datetime(fund_flow["Date"], dayfirst=True)
-        filtered_fund_flow = fund_flow[(fund_flow["_dt"].dt.date >= start_date) & 
-                                      (fund_flow["_dt"].dt.date <= end_date)].copy()
-        filtered_fund_flow.drop("_dt", axis=1, inplace=True)
+        filtered_tl = filter_data_by_dates(timeline, "Date", start_date, end_date)
+        filtered_trades = filter_data_by_dates(trades, "TradeDate", start_date, end_date)
+        filtered_nav = filter_data_by_dates(nav_df, "Date", start_date, end_date)
+        filtered_fund_flow = filter_data_by_dates(fund_flow, "Date", start_date, end_date)
     else:
         # No date filter applied
         filtered_tl = timeline
         filtered_trades = trades
         filtered_nav = nav_df
         filtered_fund_flow = fund_flow
+
+    # Filter comparison period data if enabled
+    if comparison_enabled and 'comp_start_date' in locals() and comp_start_date and comp_end_date:
+        comp_tl = filter_data_by_dates(timeline, "Date", comp_start_date, comp_end_date)
+        comp_trades = filter_data_by_dates(trades, "TradeDate", comp_start_date, comp_end_date)
+        comp_nav = filter_data_by_dates(nav_df, "Date", comp_start_date, comp_end_date)
+        comp_fund_flow = filter_data_by_dates(fund_flow, "Date", comp_start_date, comp_end_date)
+    else:
+        comp_tl = None
+        comp_trades = None
+        comp_nav = None
+        comp_fund_flow = None
+
+    # Helper function to calculate percentage change
+    def calculate_pct_change(primary_value, comparison_value):
+        """Calculate percentage change between primary and comparison values"""
+        if comparison_value == 0:
+            return 0 if primary_value == 0 else float('inf')
+        return ((primary_value - comparison_value) / abs(comparison_value)) * 100
+
+    # Helper function to render comparison metric
+    def render_comparison_metric(label, primary_value, comparison_value, format_type="number", prefix=""):
+        """Render a metric with comparison data side-by-side"""
+        if comparison_enabled and comparison_value is not None:
+            pct_change = calculate_pct_change(primary_value, comparison_value)
+            primary_color = "positive-value" if primary_value >= 0 else "negative-value" if primary_value < 0 else "neutral-value"
+            comp_color = "positive-value" if comparison_value >= 0 else "negative-value" if comparison_value < 0 else "neutral-value"
+            pct_color = "positive-value" if pct_change > 0 else "negative-value" if pct_change < 0 else "neutral-value"
+            
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">{label}</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin: 0.5rem 0;">
+                    <div style="flex: 1; text-align: center;">
+                        <div class="metric-value {primary_color}" style="font-size: 1.3rem;">{prefix}{primary_value:,.0f}</div>
+                        <div style="font-size: 0.8rem; color: #6b7280;">Primary</div>
+                    </div>
+                    <div style="flex: 1; text-align: center;">
+                        <div class="metric-value {comp_color}" style="font-size: 1.3rem;">{prefix}{comparison_value:,.0f}</div>
+                        <div style="font-size: 0.8rem; color: #6b7280;">Comparison</div>
+                    </div>
+                    <div style="flex: 1; text-align: center;">
+                        <div class="metric-value {pct_color}" style="font-size: 1.3rem;">{pct_change:+.1f}%</div>
+                        <div style="font-size: 0.8rem; color: #6b7280;">Change</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # Original single metric display
+            primary_color = "positive-value" if primary_value >= 0 else "negative-value" if primary_value < 0 else "neutral-value"
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-label">{label}</div>
+                <div class="metric-value {primary_color}">{prefix}{primary_value:,.0f}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     # ============================================================================
     # SECTION 1: PORTFOLIO OVERVIEW & CAPITAL ALLOCATION
@@ -199,44 +288,51 @@ def render():
         if not filtered_fund_flow.empty:
             total_interest = filtered_fund_flow["BrokerInterest"].sum()
         
-        # Display metrics in a professional grid
+        # Calculate comparison values if comparison is enabled
+        if comparison_enabled and comp_tl is not None and not comp_tl.empty:
+            # Prepare comparison timeline with same calculations as primary
+            comp_tl = comp_tl.copy()
+            comp_tl["Date"] = pd.to_datetime(comp_tl["Date"], dayfirst=True)
+            comp_alloc_cols = [c for c in comp_tl.columns if c.startswith("Allocation_")]
+            comp_tl["TotalAllocation"] = comp_tl[comp_alloc_cols].sum(axis=1)
+            comp_tl["SpareCapital"] = comp_tl["BrokerBalance"] - comp_tl["TotalAllocation"]
+            
+            comp_today = comp_tl.iloc[-1]
+            comp_spare = comp_today["SpareCapital"]
+            comp_total_alloc = comp_today["TotalAllocation"]
+            comp_broker = comp_today["BrokerBalance"]
+            
+            comp_total_interest = 0
+            if comp_fund_flow is not None and not comp_fund_flow.empty:
+                comp_total_interest = comp_fund_flow["BrokerInterest"].sum()
+        else:
+            comp_spare = None
+            comp_total_alloc = None
+            comp_broker = None
+            comp_total_interest = None
+        
+        # Display metrics in 4-column layout with comparison data embedded
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">💰 Spare Capital</div>
-                <div class="metric-value">${spare:,.0f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Broker Balance - Total Allocation</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("💰 Spare Capital", spare, comp_spare, prefix="$")
+            if not comparison_enabled or comp_spare is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Broker Balance - Total Allocation</div>', unsafe_allow_html=True)
         
         with col2:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📈 Total Allocated</div>
-                <div class="metric-value">${total_alloc:,.0f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all strategy allocations</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📈 Total Allocated", total_alloc, comp_total_alloc, prefix="$")
+            if not comparison_enabled or comp_total_alloc is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all strategy allocations</div>', unsafe_allow_html=True)
         
         with col3:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">🏦 Broker Balance</div>
-                <div class="metric-value">${broker:,.0f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total account balance</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("🏦 Broker Balance", broker, comp_broker, prefix="$")
+            if not comparison_enabled or comp_broker is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total account balance</div>', unsafe_allow_html=True)
         
         with col4:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">💵 Total Interest</div>
-                <div class="metric-value">${total_interest:,.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Cumulative broker interest earned</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("💵 Total Interest", total_interest, comp_total_interest, prefix="$")
+            if not comparison_enabled or comp_total_interest is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Cumulative broker interest earned</div>', unsafe_allow_html=True)
         
         st.caption(f"*Data as of {today['Date'].strftime('%d‑%b‑%Y')}*")
         
@@ -376,6 +472,48 @@ def render():
                 loss_trades += cnt
         win_trades_pct = (win_trades / total_trades * 100) if total_trades > 0 else 0
 
+        # Calculate comparison metrics if comparison is enabled
+        if comparison_enabled and comp_trades is not None and not comp_trades.empty:
+            comp_tr = comp_trades.copy()
+            comp_tr["TradeDate_dt"] = pd.to_datetime(comp_tr["TradeDate"], format="%d/%m/%y", dayfirst=True)
+            comp_daily_pnl = comp_tr.groupby("TradeDate_dt")["NetCash"].sum().sort_index()
+            
+            comp_net_pnl = comp_daily_pnl.sum()
+            comp_excess = comp_daily_pnl - rf_daily
+            comp_sharpe = comp_excess.mean() / (comp_daily_pnl.std(ddof=0) or 1e-9) * np.sqrt(252)
+            comp_gross_win = comp_daily_pnl[comp_daily_pnl>0].sum()
+            comp_gross_loss = -comp_daily_pnl[comp_daily_pnl<0].sum()
+            comp_pf = comp_gross_win / comp_gross_loss if comp_gross_loss else np.nan
+            comp_win_days = int((comp_daily_pnl>0).sum())
+            comp_loss_days = int((comp_daily_pnl<0).sum())
+            comp_total_days = comp_win_days + comp_loss_days
+            comp_win_days_pct = (comp_win_days / comp_total_days * 100) if comp_total_days > 0 else 0
+            
+            # Comparison trade-level metrics
+            comp_tg = comp_tr.groupby(["UID", "TradeDate"])
+            comp_total_trades, comp_win_trades, comp_loss_trades = 0, 0, 0
+            for (_, _), legs in comp_tg:
+                cnt = max(1, legs["Quantity"].max())
+                comp_total_trades += cnt
+                s = legs["NetCash"].sum()
+                if s > 0: 
+                    comp_win_trades += cnt
+                elif s < 0: 
+                    comp_loss_trades += cnt
+            comp_win_trades_pct = (comp_win_trades / comp_total_trades * 100) if comp_total_trades > 0 else 0
+        else:
+            comp_net_pnl = None
+            comp_sharpe = None
+            comp_pf = None
+            comp_win_days = None
+            comp_loss_days = None
+            comp_total_days = None
+            comp_win_days_pct = None
+            comp_total_trades = None
+            comp_win_trades = None
+            comp_loss_trades = None
+            comp_win_trades_pct = None
+
         # Core Performance Metrics
         st.markdown('<h3 class="subsection-header">🎯 Core Performance Metrics</h3>', unsafe_allow_html=True)
         
@@ -383,120 +521,144 @@ def render():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            pnl_color = "positive-value" if net_pnl >= 0 else "negative-value"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">💵 Net P&L</div>
-                <div class="metric-value {pnl_color}">${net_pnl:,.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">From trade NetCash data</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("💵 Net P&L", net_pnl, comp_net_pnl, prefix="$")
+            if not comparison_enabled or comp_net_pnl is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">From trade NetCash data</div>', unsafe_allow_html=True)
         
         with col2:
-            sharpe_color = "positive-value" if sharpe >= 0 else "negative-value"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📈 Sharpe Ratio</div>
-                <div class="metric-value {sharpe_color}">{sharpe:.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Daily P&L excess return / volatility × √252</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📈 Sharpe Ratio", sharpe, comp_sharpe, prefix="")
+            if not comparison_enabled or comp_sharpe is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Daily P&L excess return / volatility × √252</div>', unsafe_allow_html=True)
         
         with col3:
-            pf_color = "positive-value" if pf > 1 else "negative-value" if pf < 1 else "neutral-value"
             pf_display = f"{pf:.2f}" if not np.isnan(pf) else "N/A"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">⚖️ Profit Factor</div>
-                <div class="metric-value {pf_color}">{pf_display}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Gross wins / Gross losses</div>
-            </div>
-            """, unsafe_allow_html=True)
+            comp_pf_display = f"{comp_pf:.2f}" if comp_pf is not None and not np.isnan(comp_pf) else "N/A"
+            render_comparison_metric("⚖️ Profit Factor", pf, comp_pf, prefix="")
+            if not comparison_enabled or comp_pf is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Gross wins / Gross losses</div>', unsafe_allow_html=True)
         
         # Row 2: Day-based Metrics
         col4, col5, col6 = st.columns(3)
         
         with col4:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📅 Win/Loss Days</div>
-                <div class="metric-value neutral-value">{win_days} / {loss_days}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Days with positive/negative daily P&L</div>
-            </div>
-            """, unsafe_allow_html=True)
+            # For win/loss days, we need to handle the combined display
+            if comparison_enabled and comp_win_days is not None:
+                win_loss_display = f"{win_days} / {loss_days}"
+                comp_win_loss_display = f"{comp_win_days} / {comp_loss_days}"
+                pct_change = calculate_pct_change(win_days, comp_win_days)
+                color_class = "positive-value" if pct_change > 0 else "negative-value" if pct_change < 0 else "neutral-value"
+                
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">📅 Win/Loss Days</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin: 0.5rem 0;">
+                        <div style="flex: 1; text-align: center;">
+                            <div class="metric-value neutral-value" style="font-size: 1.3rem;">{win_loss_display}</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Primary</div>
+                        </div>
+                        <div style="flex: 1; text-align: center;">
+                            <div class="metric-value neutral-value" style="font-size: 1.3rem;">{comp_win_loss_display}</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Comparison</div>
+                        </div>
+                        <div style="flex: 1; text-align: center;">
+                            <div class="metric-value {color_class}" style="font-size: 1.3rem;">{pct_change:+.1f}%</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Change</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">📅 Win/Loss Days</div>
+                    <div class="metric-value neutral-value">{win_days} / {loss_days}</div>
+                    <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Days with positive/negative daily P&L</div>
+                </div>
+                """, unsafe_allow_html=True)
         
         with col5:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📊 Win Days %</div>
-                <div class="metric-value neutral-value">{win_days_pct:.1f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Win days / Total trading days</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📊 Win Days %", win_days_pct, comp_win_days_pct, prefix="")
+            if not comparison_enabled or comp_win_days_pct is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Win days / Total trading days</div>', unsafe_allow_html=True)
         
         with col6:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">🎯 Win/Loss Trades</div>
-                <div class="metric-value neutral-value">{win_trades} / {loss_trades}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Individual profitable/unprofitable trades</div>
-            </div>
-            """, unsafe_allow_html=True)
+            # For win/loss trades, we need to handle the combined display
+            if comparison_enabled and comp_win_trades is not None:
+                win_loss_trades_display = f"{win_trades} / {loss_trades}"
+                comp_win_loss_trades_display = f"{comp_win_trades} / {comp_loss_trades}"
+                pct_change = calculate_pct_change(win_trades, comp_win_trades)
+                color_class = "positive-value" if pct_change > 0 else "negative-value" if pct_change < 0 else "neutral-value"
+                
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">🎯 Win/Loss Trades</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin: 0.5rem 0;">
+                        <div style="flex: 1; text-align: center;">
+                            <div class="metric-value neutral-value" style="font-size: 1.3rem;">{win_loss_trades_display}</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Primary</div>
+                        </div>
+                        <div style="flex: 1; text-align: center;">
+                            <div class="metric-value neutral-value" style="font-size: 1.3rem;">{comp_win_loss_trades_display}</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Comparison</div>
+                        </div>
+                        <div style="flex: 1; text-align: center;">
+                            <div class="metric-value {color_class}" style="font-size: 1.3rem;">{pct_change:+.1f}%</div>
+                            <div style="font-size: 0.8rem; color: #6b7280;">Change</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-label">🎯 Win/Loss Trades</div>
+                    <div class="metric-value neutral-value">{win_trades} / {loss_trades}</div>
+                    <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Individual profitable/unprofitable trades</div>
+                </div>
+                """, unsafe_allow_html=True)
         
         # Row 3: Additional Metrics
         col7, col8, col9 = st.columns(3)
         
         with col7:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📈 Win Trades %</div>
-                <div class="metric-value neutral-value">{win_trades_pct:.1f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Win trades / Total trades</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📈 Win Trades %", win_trades_pct, comp_win_trades_pct, prefix="")
+            if not comparison_enabled or comp_win_trades_pct is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Win trades / Total trades</div>', unsafe_allow_html=True)
         
         with col8:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">🔄 Total Trades</div>
-                <div class="metric-value neutral-value">{total_trades}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Count of individual trade executions</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("🔄 Total Trades", total_trades, comp_total_trades, prefix="")
+            if not comparison_enabled or comp_total_trades is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Count of individual trade executions</div>', unsafe_allow_html=True)
         
         with col9:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📊 Trading Days</div>
-                <div class="metric-value neutral-value">{total_days}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Days with trading activity</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📊 Trading Days", total_days, comp_total_days, prefix="")
+            if not comparison_enabled or comp_total_days is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Days with trading activity</div>', unsafe_allow_html=True)
         
+        # Calculate comparison fund flow PnL if comparison is enabled
+        if comparison_enabled and comp_fund_flow is not None and not comp_fund_flow.empty:
+            from scripts.metrics import calculate_fund_flow_pnl
+            comp_fund_flow_pnl = calculate_fund_flow_pnl(
+                start_date=comp_start_date.strftime('%Y-%m-%d') if comp_start_date else None,
+                end_date=comp_end_date.strftime('%Y-%m-%d') if comp_end_date else None
+            )
+        else:
+            comp_fund_flow_pnl = None
+
         # PnL Reconciliation Section
         st.markdown('<h3 class="subsection-header">💰 PnL Reconciliation</h3>', unsafe_allow_html=True)
         
         col_pnl1, col_pnl2 = st.columns(2)
         
         with col_pnl1:
-            pnl_color = "positive-value" if net_pnl >= 0 else "negative-value"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📊 Trade-Based P&L</div>
-                <div class="metric-value {pnl_color}">${net_pnl:,.2f}</div>
-                <div class="metric-caption">From trade NetCash data</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📊 Trade-Based P&L", net_pnl, comp_net_pnl, prefix="$")
+            if not comparison_enabled or comp_net_pnl is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">From trade NetCash data</div>', unsafe_allow_html=True)
         
         with col_pnl2:
-            ff_pnl_color = "positive-value" if fund_flow_pnl["total_pnl"] >= 0 else "negative-value"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">🏦 Fund Flow P&L</div>
-                <div class="metric-value {ff_pnl_color}">${fund_flow_pnl["total_pnl"]:,.2f}</div>
-                <div class="metric-caption">From cash flow reconciliation</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("🏦 Fund Flow P&L", fund_flow_pnl["total_pnl"], comp_fund_flow_pnl["total_pnl"] if comp_fund_flow_pnl else None, prefix="$")
+            if not comparison_enabled or comp_fund_flow_pnl is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">From cash flow reconciliation</div>', unsafe_allow_html=True)
         
         # Show calculation details in expander
         with st.expander("📋 Fund Flow PnL Calculation Details", expanded=False):
@@ -549,6 +711,18 @@ def render():
             else:
                 st.success("✅ **Calculations match!** Both methods show the same PnL.")
         
+        # Calculate comparison efficiency metrics if comparison is enabled
+        if comparison_enabled and comp_trades is not None and not comp_trades.empty:
+            comp_avg_trade_return = comp_net_pnl / comp_total_trades if comp_total_trades > 0 else 0
+            comp_avg_win_amount = comp_gross_win / comp_win_days if comp_win_days > 0 else 0
+            comp_avg_loss_amount = comp_gross_loss / comp_loss_days if comp_loss_days > 0 else 0
+            comp_expectancy = (comp_win_trades_pct/100 * comp_avg_win_amount) - ((100-comp_win_trades_pct)/100 * comp_avg_loss_amount)
+        else:
+            comp_avg_trade_return = None
+            comp_avg_win_amount = None
+            comp_avg_loss_amount = None
+            comp_expectancy = None
+
         # Trading Efficiency Metrics
         st.markdown('<h3 class="subsection-header">📊 Trading Efficiency Metrics</h3>', unsafe_allow_html=True)
         
@@ -562,63 +736,47 @@ def render():
         col_eff1, col_eff2, col_eff3 = st.columns(3)
         
         with col_eff1:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📈 Avg Trade Return</div>
-                <div class="metric-value neutral-value">${avg_trade_return:,.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Net P&L / Total trades</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📈 Avg Trade Return", avg_trade_return, comp_avg_trade_return, prefix="$")
+            if not comparison_enabled or comp_avg_trade_return is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Net P&L / Total trades</div>', unsafe_allow_html=True)
         
         with col_eff2:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">💰 Avg Win Amount</div>
-                <div class="metric-value positive-value">${avg_win_amount:,.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Gross wins / Win days</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("💰 Avg Win Amount", avg_win_amount, comp_avg_win_amount, prefix="$")
+            if not comparison_enabled or comp_avg_win_amount is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Gross wins / Win days</div>', unsafe_allow_html=True)
         
         with col_eff3:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">💸 Avg Loss Amount</div>
-                <div class="metric-value negative-value">${avg_loss_amount:,.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Gross losses / Loss days</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("💸 Avg Loss Amount", avg_loss_amount, comp_avg_loss_amount, prefix="$")
+            if not comparison_enabled or comp_avg_loss_amount is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Gross losses / Loss days</div>', unsafe_allow_html=True)
         
+        # Calculate additional comparison metrics
+        if comparison_enabled and comp_trades is not None and not comp_trades.empty:
+            comp_rr_ratio = comp_avg_win_amount / comp_avg_loss_amount if comp_avg_loss_amount > 0 else 0
+            comp_breakeven_win_pct = 1 / (1 + comp_rr_ratio) * 100 if comp_rr_ratio > 0 else 0
+        else:
+            comp_rr_ratio = None
+            comp_breakeven_win_pct = None
+
         # Row 2: Additional Efficiency Metrics
         col_eff4, col_eff5, col_eff6 = st.columns(3)
         
         with col_eff4:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📊 Expectancy per Trade</div>
-                <div class="metric-value neutral-value">${expectancy:,.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">(Win% × Avg Win) - (Loss% × Avg Loss)</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📊 Expectancy per Trade", expectancy, comp_expectancy, prefix="$")
+            if not comparison_enabled or comp_expectancy is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">(Win% × Avg Win) - (Loss% × Avg Loss)</div>', unsafe_allow_html=True)
         
         with col_eff5:
             rr_ratio = avg_win_amount / avg_loss_amount if avg_loss_amount > 0 else 0
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">⚖️ Reward/Risk Ratio</div>
-                <div class="metric-value neutral-value">{rr_ratio:.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Avg Win / Avg Loss</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("⚖️ Reward/Risk Ratio", rr_ratio, comp_rr_ratio, prefix="")
+            if not comparison_enabled or comp_rr_ratio is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Avg Win / Avg Loss</div>', unsafe_allow_html=True)
         
         with col_eff6:
             breakeven_win_pct = 1 / (1 + rr_ratio) * 100 if rr_ratio > 0 else 0
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">🎯 Break-even Win %</div>
-                <div class="metric-value neutral-value">{breakeven_win_pct:.1f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">1 / (1 + Reward/Risk ratio)</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("🎯 Break-even Win %", breakeven_win_pct, comp_breakeven_win_pct, prefix="")
+            if not comparison_enabled or comp_breakeven_win_pct is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">1 / (1 + Reward/Risk ratio)</div>', unsafe_allow_html=True)
     else:
         st.warning("⚠️ No trading data available for the selected date range.")
 
@@ -667,71 +825,67 @@ def render():
         days = (nav_ser.index[-1] - nav_ser.index[0]).days
         cagr = ((current_nav/first_nav) ** (365.25/days) - 1) if days>0 else np.nan
 
+        # Calculate comparison NAV metrics if comparison is enabled
+        if comparison_enabled and comp_nav is not None and not comp_nav.empty:
+            comp_nav_ser = comp_nav.set_index("Date")["NAV"].sort_index()
+            comp_first_nav = comp_nav_ser.iloc[0]
+            comp_current_nav = comp_nav_ser.iloc[-1]
+            comp_max_nav = comp_nav_ser.max()
+            comp_cummax_nav = comp_nav_ser.cummax()
+            comp_dd_ser = comp_nav_ser / comp_cummax_nav - 1
+            comp_current_dd = comp_dd_ser.iloc[-1]
+            comp_max_dd = comp_dd_ser.min()
+        else:
+            comp_current_nav = None
+            comp_max_nav = None
+            comp_current_dd = None
+            comp_max_dd = None
+
         # NAV Key Metrics
         st.markdown('<h3 class="subsection-header">📊 NAV Key Metrics</h3>', unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            nav_color = "positive-value" if current_nav >= first_nav else "negative-value"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📈 Current NAV</div>
-                <div class="metric-value {nav_color}">{current_nav:,.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Latest NAV value from portfolio data</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📈 Current NAV", current_nav, comp_current_nav, prefix="")
+            if not comparison_enabled or comp_current_nav is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Latest NAV value from portfolio data</div>', unsafe_allow_html=True)
         
         with col2:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">🏆 Max NAV</div>
-                <div class="metric-value neutral-value">{max_nav:,.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Highest NAV value achieved</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("🏆 Max NAV", max_nav, comp_max_nav, prefix="")
+            if not comparison_enabled or comp_max_nav is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Highest NAV value achieved</div>', unsafe_allow_html=True)
         
         with col3:
-            dd_color = "negative-value" if current_dd < 0 else "positive-value"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📉 Current Drawdown</div>
-                <div class="metric-value {dd_color}">{current_dd*100:,.2f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">(Current NAV / Max NAV) - 1</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📉 Current Drawdown", current_dd*100, comp_current_dd*100 if comp_current_dd is not None else None, prefix="")
+            if not comparison_enabled or comp_current_dd is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">(Current NAV / Max NAV) - 1</div>', unsafe_allow_html=True)
         
         col4, col5, col6 = st.columns(3)
         
         with col4:
-            max_dd_color = "negative-value"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📉 Max Drawdown</div>
-                <div class="metric-value {max_dd_color}">{max_dd*100:,.2f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Largest peak-to-trough decline</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📉 Max Drawdown", max_dd*100, comp_max_dd*100 if comp_max_dd is not None else None, prefix="")
+            if not comparison_enabled or comp_max_dd is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Largest peak-to-trough decline</div>', unsafe_allow_html=True)
         
         with col5:
-            cagr_color = "positive-value" if cagr >= 0 else "negative-value"
+            # Calculate comparison CAGR if available
+            if comparison_enabled and comp_nav is not None and not comp_nav.empty:
+                comp_days = (comp_nav_ser.index[-1] - comp_nav_ser.index[0]).days
+                comp_cagr = ((comp_current_nav/comp_first_nav) ** (365.25/comp_days) - 1) if comp_days>0 else np.nan
+            else:
+                comp_cagr = None
+            
             cagr_display = f"{cagr*100:,.2f}%" if not np.isnan(cagr) else "N/A"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📊 CAGR</div>
-                <div class="metric-value {cagr_color}">{cagr_display}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Compound annual growth rate</div>
-            </div>
-            """, unsafe_allow_html=True)
+            comp_cagr_display = f"{comp_cagr*100:,.2f}%" if comp_cagr is not None and not np.isnan(comp_cagr) else "N/A"
+            render_comparison_metric("📊 CAGR", cagr*100 if not np.isnan(cagr) else 0, comp_cagr*100 if comp_cagr is not None and not np.isnan(comp_cagr) else 0, prefix="")
+            if not comparison_enabled or comp_cagr is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Compound annual growth rate</div>', unsafe_allow_html=True)
         
         with col6:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📅 Analysis Period</div>
-                <div class="metric-value neutral-value">{days} days</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total days in analysis period</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📅 Analysis Period", days, comp_days if comparison_enabled and comp_nav is not None and not comp_nav.empty else None, prefix="")
+            if not comparison_enabled or comp_nav is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total days in analysis period</div>', unsafe_allow_html=True)
 
         # Return-Based Metrics
         st.markdown('<h3 class="subsection-header">📈 Return-Based Metrics</h3>', unsafe_allow_html=True)
@@ -760,77 +914,119 @@ def render():
         # Return Over Max Drawdown
         return_over_dd = (cagr / abs(max_dd)) if max_dd != 0 else np.nan
         
+        # Calculate comparison return metrics if comparison is enabled
+        if comparison_enabled and comp_nav is not None and not comp_nav.empty:
+            comp_daily_returns = comp_nav_ser.pct_change().dropna()
+            comp_monthly_returns = comp_daily_returns.resample('ME').apply(lambda x: (1 + x).prod() - 1)
+            comp_avg_monthly_return = comp_monthly_returns.mean() * 100
+            comp_rolling_7d = comp_daily_returns.rolling(7).apply(lambda x: (1 + x).prod() - 1)
+            comp_rolling_30d = comp_daily_returns.rolling(30).apply(lambda x: (1 + x).prod() - 1)
+            comp_current_7d_return = comp_rolling_7d.iloc[-1] * 100 if not comp_rolling_7d.empty else 0
+            comp_current_30d_return = comp_rolling_30d.iloc[-1] * 100 if not comp_rolling_30d.empty else 0
+        else:
+            comp_avg_monthly_return = None
+            comp_current_7d_return = None
+            comp_current_30d_return = None
+
         # Row 1: Return Metrics
         col_r1, col_r2, col_r3 = st.columns(3)
         
         with col_r1:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📊 Avg Monthly Return</div>
-                <div class="metric-value neutral-value">{avg_monthly_return:.2f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Average monthly NAV return</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📊 Avg Monthly Return", avg_monthly_return, comp_avg_monthly_return, prefix="")
+            if not comparison_enabled or comp_avg_monthly_return is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Average monthly NAV return</div>', unsafe_allow_html=True)
         
         with col_r2:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📈 7-Day Rolling Return</div>
-                <div class="metric-value neutral-value">{current_7d_return:.2f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">7-day cumulative NAV return</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📈 7-Day Rolling Return", current_7d_return, comp_current_7d_return, prefix="")
+            if not comparison_enabled or comp_current_7d_return is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">7-day cumulative NAV return</div>', unsafe_allow_html=True)
         
         with col_r3:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📈 30-Day Rolling Return</div>
-                <div class="metric-value neutral-value">{current_30d_return:.2f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">30-day cumulative NAV return</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📈 30-Day Rolling Return", current_30d_return, comp_current_30d_return, prefix="")
+            if not comparison_enabled or comp_current_30d_return is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">30-day cumulative NAV return</div>', unsafe_allow_html=True)
         
+        # Calculate additional comparison metrics
+        if comparison_enabled and comp_nav is not None and not comp_nav.empty:
+            comp_annualized_vol = comp_daily_returns.std() * np.sqrt(252) * 100
+            comp_downside_returns = comp_daily_returns[comp_daily_returns < 0]
+            comp_downside_vol = comp_downside_returns.std() * np.sqrt(252) if len(comp_downside_returns) > 0 else 1e-9
+            comp_sortino_ratio = (comp_daily_returns.mean() * 252) / comp_downside_vol if comp_downside_vol > 0 else 0
+            comp_return_over_dd = (comp_cagr / abs(comp_max_dd)) if comp_max_dd != 0 else np.nan
+        else:
+            comp_annualized_vol = None
+            comp_sortino_ratio = None
+            comp_return_over_dd = None
+
         # Row 2: Additional Return Metrics
         col_r4, col_r5, col_r6 = st.columns(3)
         
         with col_r4:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📊 Annualized Volatility</div>
-                <div class="metric-value neutral-value">{annualized_vol:.2f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Daily NAV return std × √252</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📊 Annualized Volatility", annualized_vol, comp_annualized_vol, prefix="")
+            if not comparison_enabled or comp_annualized_vol is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Daily NAV return std × √252</div>', unsafe_allow_html=True)
         
         with col_r5:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📈 Sortino Ratio</div>
-                <div class="metric-value neutral-value">{sortino_ratio:.2f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Return / Downside volatility</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📈 Sortino Ratio", sortino_ratio, comp_sortino_ratio, prefix="")
+            if not comparison_enabled or comp_sortino_ratio is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Return / Downside volatility</div>', unsafe_allow_html=True)
         
         with col_r6:
-            rodd_display = f"{return_over_dd:.2f}" if not np.isnan(return_over_dd) else "N/A"
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📊 Return/Max DD</div>
-                <div class="metric-value neutral-value">{rodd_display}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">CAGR / Max drawdown</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📊 Return/Max DD", return_over_dd if not np.isnan(return_over_dd) else 0, comp_return_over_dd if comp_return_over_dd is not None and not np.isnan(comp_return_over_dd) else 0, prefix="")
+            if not comparison_enabled or comp_return_over_dd is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">CAGR / Max drawdown</div>', unsafe_allow_html=True)
 
         # NAV Performance Chart
         st.markdown('<h3 class="subsection-header">📈 NAV Performance Chart</h3>', unsafe_allow_html=True)
         
-        fig_nav = px.line(nav_ser, title="NAV Performance Over Time")
-        fig_nav.update_layout(
-            xaxis_title="Date",
-            yaxis_title="NAV",
-            height=500,
-            showlegend=False
-        )
+        # Create NAV chart with comparison if enabled
+        if comparison_enabled and comp_nav is not None and not comp_nav.empty:
+            # Calculate comparison NAV series
+            comp_nav_ser = comp_nav.set_index("Date")["NAV"].sort_index()
+            
+            # Normalize comparison NAV to start at 100 for fair comparison
+            if not comp_nav_ser.empty:
+                comp_start_nav = comp_nav_ser.iloc[0]
+                comp_nav_ser = (comp_nav_ser / comp_start_nav) * 100
+            
+            # Create figure with both series
+            fig_nav = go.Figure()
+            
+            # Primary period NAV
+            fig_nav.add_trace(go.Scatter(
+                x=nav_ser.index,
+                y=nav_ser.values,
+                mode='lines',
+                name='Primary Period',
+                line=dict(color='#1f77b4', width=2)
+            ))
+            
+            # Comparison period NAV
+            fig_nav.add_trace(go.Scatter(
+                x=comp_nav_ser.index,
+                y=comp_nav_ser.values,
+                mode='lines',
+                name='Comparison Period',
+                line=dict(color='#ff7f0e', width=2, dash='dash')
+            ))
+            
+            fig_nav.update_layout(
+                title="NAV Performance Comparison",
+                xaxis_title="Date",
+                yaxis_title="NAV (Normalized to 100)",
+                height=500,
+                showlegend=True
+            )
+        else:
+            # Original single period chart
+            fig_nav = px.line(nav_ser, title="NAV Performance Over Time")
+            fig_nav.update_layout(
+                xaxis_title="Date",
+                yaxis_title="NAV",
+                height=500,
+                showlegend=False
+            )
+        
         st.plotly_chart(fig_nav, use_container_width=True)
     else:
         st.warning("⚠️ No NAV data available for the selected date range.")
@@ -858,36 +1054,34 @@ def render():
                 # Average Cost per Trade
                 avg_cost_per_trade = total_slippage / total_trades if total_trades > 0 else 0
                 
+                # Calculate comparison cost metrics if comparison is enabled
+                if comparison_enabled and comp_trades is not None and not comp_trades.empty:
+                    comp_total_slippage = comp_trades["Slippage"].sum() if "Slippage" in comp_trades.columns else 0
+                    comp_cost_return_ratio = (comp_total_slippage / comp_net_pnl * 100) if comp_net_pnl != 0 else 0
+                    comp_avg_cost_per_trade = comp_total_slippage / comp_total_trades if comp_total_trades > 0 else 0
+                else:
+                    comp_total_slippage = None
+                    comp_cost_return_ratio = None
+                    comp_avg_cost_per_trade = None
+
                 # Display Cost Metrics
                 col_cost1, col_cost2, col_cost3 = st.columns(3)
                 with col_cost1:
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <div class="metric-label">💰 Total Slippage</div>
-                        <div class="metric-value neutral-value">${total_slippage:,.2f}</div>
-                        <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all trade slippage costs</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    render_comparison_metric("💰 Total Slippage", total_slippage, comp_total_slippage, prefix="$")
+                    if not comparison_enabled or comp_total_slippage is None:
+                        st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Sum of all trade slippage costs</div>', unsafe_allow_html=True)
                 with col_cost2:
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <div class="metric-label">📊 Cost/Return Ratio</div>
-                        <div class="metric-value neutral-value">{cost_return_ratio:.2f}%</div>
-                        <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Slippage / Net P&L × 100</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    render_comparison_metric("📊 Cost/Return Ratio", cost_return_ratio, comp_cost_return_ratio, prefix="")
+                    if not comparison_enabled or comp_cost_return_ratio is None:
+                        st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Slippage / Net P&L × 100</div>', unsafe_allow_html=True)
                 with col_cost3:
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <div class="metric-label">💸 Avg Cost per Trade</div>
-                        <div class="metric-value neutral-value">${avg_cost_per_trade:,.2f}</div>
-                        <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total slippage / Total trades</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    render_comparison_metric("💸 Avg Cost per Trade", avg_cost_per_trade, comp_avg_cost_per_trade, prefix="$")
+                    if not comparison_enabled or comp_avg_cost_per_trade is None:
+                        st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Total slippage / Total trades</div>', unsafe_allow_html=True)
             else:
                 st.info("Cost metrics require trade data.")
             
-                        # Rolling Performance Charts
+            # Rolling Performance Charts
             st.markdown('<h4 class="subsection-header">📈 Rolling Performance Analysis</h4>', unsafe_allow_html=True)
             
             if not filtered_trades.empty:
@@ -920,64 +1114,295 @@ def render():
                         with col_chart1:
                             st.markdown('<h5 class="subsection-header">📈 7-Day Rolling P&L</h5>', unsafe_allow_html=True)
                             if len(rolling_7d_pnl.dropna()) > 0:
-                                st.line_chart(rolling_7d_pnl, use_container_width=True)
+                                # Create 7-day rolling P&L chart with comparison if enabled
+                                if comparison_enabled and comp_trades is not None and not comp_trades.empty:
+                                    # Calculate comparison rolling P&L
+                                    comp_daily_pnl_series = comp_trades.groupby("TradeDate")["NetCash"].sum()
+                                    comp_daily_pnl_series.index = pd.to_datetime(comp_daily_pnl_series.index, format="%d/%m/%y", dayfirst=True)
+                                    comp_daily_pnl_series = comp_daily_pnl_series.sort_index()
+                                    comp_rolling_7d_pnl = comp_daily_pnl_series.rolling(7).sum()
+                                    
+                                    # Create figure with both series
+                                    fig = go.Figure()
+                                    
+                                    # Primary period rolling P&L
+                                    fig.add_trace(go.Scatter(
+                                        x=rolling_7d_pnl.index,
+                                        y=rolling_7d_pnl.values,
+                                        mode='lines',
+                                        name=f'Primary Period',
+                                        line=dict(color='#1f77b4', width=2)
+                                    ))
+                                    
+                                    # Comparison period rolling P&L
+                                    fig.add_trace(go.Scatter(
+                                        x=comp_rolling_7d_pnl.index,
+                                        y=comp_rolling_7d_pnl.values,
+                                        mode='lines',
+                                        name=f'Comparison Period',
+                                        line=dict(color='#ff7f0e', width=2, dash='dash')
+                                    ))
+                                    
+                                    fig.update_layout(
+                                        title="7-Day Rolling P&L",
+                                        xaxis_title="Date",
+                                        yaxis_title="7-Day Rolling P&L",
+                                        height=300,
+                                        showlegend=True,
+                                        legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                        )
+                                    )
+                                    
+                                    # Set y-axis range based on combined data
+                                    all_data = pd.concat([rolling_7d_pnl, comp_rolling_7d_pnl])
+                                    if pd.notna(all_data.min()) and pd.notna(all_data.max()):
+                                        y_range = [all_data.min() * 0.95, all_data.max() * 1.05]
+                                        fig.update_layout(yaxis=dict(range=y_range))
+                                    
+                                    st.plotly_chart(fig, use_container_width=True)
+                                else:
+                                    # Original single period chart
+                                    st.line_chart(rolling_7d_pnl, use_container_width=True)
                             else:
                                 st.info("Insufficient data for 7-day rolling P&L chart")
                             
                             st.markdown('<h5 class="subsection-header">📈 7-Day Rolling Sharpe</h5>', unsafe_allow_html=True)
                             if len(rolling_7d_sharpe.dropna()) > 0:
-                                st.line_chart(rolling_7d_sharpe, use_container_width=True)
+                                # Create 7-day rolling Sharpe chart with comparison if enabled
+                                if comparison_enabled and comp_trades is not None and not comp_trades.empty:
+                                    # Calculate comparison rolling Sharpe
+                                    comp_daily_pnl_series = comp_trades.groupby("TradeDate")["NetCash"].sum()
+                                    comp_daily_pnl_series.index = pd.to_datetime(comp_daily_pnl_series.index, format="%d/%m/%y", dayfirst=True)
+                                    comp_daily_pnl_series = comp_daily_pnl_series.sort_index()
+                                    comp_rolling_7d_avg = comp_daily_pnl_series.rolling(7).mean()
+                                    comp_rolling_7d_std = comp_daily_pnl_series.rolling(7).std()
+                                    comp_rolling_7d_sharpe = (comp_rolling_7d_avg / comp_rolling_7d_std) * np.sqrt(252)
+                                    comp_rolling_7d_sharpe = comp_rolling_7d_sharpe.fillna(0)
+                                    
+                                    # Create figure with both series
+                                    fig = go.Figure()
+                                    
+                                    # Primary period rolling Sharpe
+                                    fig.add_trace(go.Scatter(
+                                        x=rolling_7d_sharpe.index,
+                                        y=rolling_7d_sharpe.values,
+                                        mode='lines',
+                                        name=f'Primary Period',
+                                        line=dict(color='#1f77b4', width=2)
+                                    ))
+                                    
+                                    # Comparison period rolling Sharpe
+                                    fig.add_trace(go.Scatter(
+                                        x=comp_rolling_7d_sharpe.index,
+                                        y=comp_rolling_7d_sharpe.values,
+                                        mode='lines',
+                                        name=f'Comparison Period',
+                                        line=dict(color='#ff7f0e', width=2, dash='dash')
+                                    ))
+                                    
+                                    fig.update_layout(
+                                        title="7-Day Rolling Sharpe",
+                                        xaxis_title="Date",
+                                        yaxis_title="7-Day Rolling Sharpe",
+                                        height=300,
+                                        showlegend=True,
+                                        legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                        )
+                                    )
+                                    
+                                    # Set y-axis range based on combined data
+                                    all_data = pd.concat([rolling_7d_sharpe, comp_rolling_7d_sharpe])
+                                    if pd.notna(all_data.min()) and pd.notna(all_data.max()):
+                                        y_range = [all_data.min() * 0.95, all_data.max() * 1.05]
+                                        fig.update_layout(yaxis=dict(range=y_range))
+                                    
+                                    st.plotly_chart(fig, use_container_width=True)
+                                else:
+                                    # Original single period chart
+                                    st.line_chart(rolling_7d_sharpe, use_container_width=True)
                             else:
                                 st.info("Insufficient data for 7-day rolling Sharpe chart")
                         
                         with col_chart2:
                             st.markdown('<h5 class="subsection-header">📈 30-Day Rolling P&L</h5>', unsafe_allow_html=True)
                             if len(rolling_30d_pnl.dropna()) > 0:
-                                st.line_chart(rolling_30d_pnl, use_container_width=True)
+                                # Create 30-day rolling P&L chart with comparison if enabled
+                                if comparison_enabled and comp_trades is not None and not comp_trades.empty:
+                                    # Calculate comparison rolling P&L
+                                    comp_daily_pnl_series = comp_trades.groupby("TradeDate")["NetCash"].sum()
+                                    comp_daily_pnl_series.index = pd.to_datetime(comp_daily_pnl_series.index, format="%d/%m/%y", dayfirst=True)
+                                    comp_daily_pnl_series = comp_daily_pnl_series.sort_index()
+                                    comp_rolling_30d_pnl = comp_daily_pnl_series.rolling(30).sum()
+                                    
+                                    # Create figure with both series
+                                    fig = go.Figure()
+                                    
+                                    # Primary period rolling P&L
+                                    fig.add_trace(go.Scatter(
+                                        x=rolling_30d_pnl.index,
+                                        y=rolling_30d_pnl.values,
+                                        mode='lines',
+                                        name=f'Primary Period',
+                                        line=dict(color='#1f77b4', width=2)
+                                    ))
+                                    
+                                    # Comparison period rolling P&L
+                                    fig.add_trace(go.Scatter(
+                                        x=comp_rolling_30d_pnl.index,
+                                        y=comp_rolling_30d_pnl.values,
+                                        mode='lines',
+                                        name=f'Comparison Period',
+                                        line=dict(color='#ff7f0e', width=2, dash='dash')
+                                    ))
+                                    
+                                    fig.update_layout(
+                                        title="30-Day Rolling P&L",
+                                        xaxis_title="Date",
+                                        yaxis_title="30-Day Rolling P&L",
+                                        height=300,
+                                        showlegend=True,
+                                        legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                        )
+                                    )
+                                    
+                                    # Set y-axis range based on combined data
+                                    all_data = pd.concat([rolling_30d_pnl, comp_rolling_30d_pnl])
+                                    if pd.notna(all_data.min()) and pd.notna(all_data.max()):
+                                        y_range = [all_data.min() * 0.95, all_data.max() * 1.05]
+                                        fig.update_layout(yaxis=dict(range=y_range))
+                                    
+                                    st.plotly_chart(fig, use_container_width=True)
+                                else:
+                                    # Original single period chart
+                                    st.line_chart(rolling_30d_pnl, use_container_width=True)
                             else:
                                 st.info("Insufficient data for 30-day rolling P&L chart")
                             
                             st.markdown('<h5 class="subsection-header">📈 30-Day Rolling Sharpe</h5>', unsafe_allow_html=True)
                             if len(rolling_30d_sharpe.dropna()) > 0:
-                                st.line_chart(rolling_30d_sharpe, use_container_width=True)
+                                # Create 30-day rolling Sharpe chart with comparison if enabled
+                                if comparison_enabled and comp_trades is not None and not comp_trades.empty:
+                                    # Calculate comparison rolling Sharpe
+                                    comp_daily_pnl_series = comp_trades.groupby("TradeDate")["NetCash"].sum()
+                                    comp_daily_pnl_series.index = pd.to_datetime(comp_daily_pnl_series.index, format="%d/%m/%y", dayfirst=True)
+                                    comp_daily_pnl_series = comp_daily_pnl_series.sort_index()
+                                    comp_rolling_30d_avg = comp_daily_pnl_series.rolling(30).mean()
+                                    comp_rolling_30d_std = comp_daily_pnl_series.rolling(30).std()
+                                    comp_rolling_30d_sharpe = (comp_rolling_30d_avg / comp_rolling_30d_std) * np.sqrt(252)
+                                    comp_rolling_30d_sharpe = comp_rolling_30d_sharpe.fillna(0)
+                                    
+                                    # Create figure with both series
+                                    fig = go.Figure()
+                                    
+                                    # Primary period rolling Sharpe
+                                    fig.add_trace(go.Scatter(
+                                        x=rolling_30d_sharpe.index,
+                                        y=rolling_30d_sharpe.values,
+                                        mode='lines',
+                                        name=f'Primary Period',
+                                        line=dict(color='#1f77b4', width=2)
+                                    ))
+                                    
+                                    # Comparison period rolling Sharpe
+                                    fig.add_trace(go.Scatter(
+                                        x=comp_rolling_30d_sharpe.index,
+                                        y=comp_rolling_30d_sharpe.values,
+                                        mode='lines',
+                                        name=f'Comparison Period',
+                                        line=dict(color='#ff7f0e', width=2, dash='dash')
+                                    ))
+                                    
+                                    fig.update_layout(
+                                        title="30-Day Rolling Sharpe",
+                                        xaxis_title="Date",
+                                        yaxis_title="30-Day Rolling Sharpe",
+                                        height=300,
+                                        showlegend=True,
+                                        legend=dict(
+                                            orientation="h",
+                                            yanchor="bottom",
+                                            y=1.02,
+                                            xanchor="right",
+                                            x=1
+                                        )
+                                    )
+                                    
+                                    # Set y-axis range based on combined data
+                                    all_data = pd.concat([rolling_30d_sharpe, comp_rolling_30d_sharpe])
+                                    if pd.notna(all_data.min()) and pd.notna(all_data.max()):
+                                        y_range = [all_data.min() * 0.95, all_data.max() * 1.05]
+                                        fig.update_layout(yaxis=dict(range=y_range))
+                                    
+                                    st.plotly_chart(fig, use_container_width=True)
+                                else:
+                                    # Original single period chart
+                                    st.line_chart(rolling_30d_sharpe, use_container_width=True)
                             else:
                                 st.info("Insufficient data for 30-day rolling Sharpe chart")
                         
+                        # Calculate comparison rolling metrics if enabled
+                        if comparison_enabled and comp_trades is not None and not comp_trades.empty:
+                            comp_daily_pnl_series = comp_trades.groupby("TradeDate")["NetCash"].sum()
+                            comp_daily_pnl_series.index = pd.to_datetime(comp_daily_pnl_series.index, format="%d/%m/%y", dayfirst=True)
+                            comp_daily_pnl_series = comp_daily_pnl_series.sort_index()
+                            
+                            if len(comp_daily_pnl_series) > 7:
+                                comp_rolling_7d_pnl = comp_daily_pnl_series.rolling(7).sum()
+                                comp_rolling_30d_pnl = comp_daily_pnl_series.rolling(30).sum()
+                                comp_rolling_7d_avg = comp_daily_pnl_series.rolling(7).mean()
+                                comp_rolling_30d_avg = comp_daily_pnl_series.rolling(30).mean()
+                                comp_rolling_7d_std = comp_daily_pnl_series.rolling(7).std()
+                                comp_rolling_30d_std = comp_daily_pnl_series.rolling(30).std()
+                                comp_rolling_7d_sharpe = (comp_rolling_7d_avg / comp_rolling_7d_std) * np.sqrt(252)
+                                comp_rolling_30d_sharpe = (comp_rolling_30d_avg / comp_rolling_30d_std) * np.sqrt(252)
+                                comp_rolling_7d_sharpe = comp_rolling_7d_sharpe.fillna(0)
+                                comp_rolling_30d_sharpe = comp_rolling_30d_sharpe.fillna(0)
+                                
+                                comp_current_7d_pnl = comp_rolling_7d_pnl.iloc[-1] if not comp_rolling_7d_pnl.empty else 0
+                                comp_current_30d_pnl = comp_rolling_30d_pnl.iloc[-1] if not comp_rolling_30d_pnl.empty else 0
+                                comp_current_7d_sharpe = comp_rolling_7d_sharpe.iloc[-1] if not comp_rolling_7d_sharpe.empty else 0
+                                comp_current_30d_sharpe = comp_rolling_30d_sharpe.iloc[-1] if not comp_rolling_30d_sharpe.empty else 0
+                            else:
+                                comp_current_7d_pnl = None
+                                comp_current_30d_pnl = None
+                                comp_current_7d_sharpe = None
+                                comp_current_30d_sharpe = None
+                        else:
+                            comp_current_7d_pnl = None
+                            comp_current_30d_pnl = None
+                            comp_current_7d_sharpe = None
+                            comp_current_30d_sharpe = None
+
                         # Display current rolling metrics
                         st.markdown('<h5 class="subsection-header">📊 Current Rolling Metrics</h5>', unsafe_allow_html=True)
                         col_roll1, col_roll2, col_roll3, col_roll4 = st.columns(4)
                         with col_roll1:
                             current_7d_pnl = rolling_7d_pnl.iloc[-1] if not rolling_7d_pnl.empty else 0
-                            st.markdown(f"""
-                            <div class="metric-container">
-                                <div class="metric-label">📈 7-Day P&L</div>
-                                <div class="metric-value neutral-value">${current_7d_pnl:,.0f}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            render_comparison_metric("📈 7-Day P&L", current_7d_pnl, comp_current_7d_pnl, prefix="$")
                         with col_roll2:
                             current_30d_pnl = rolling_30d_pnl.iloc[-1] if not rolling_30d_pnl.empty else 0
-                            st.markdown(f"""
-                            <div class="metric-container">
-                                <div class="metric-label">📈 30-Day P&L</div>
-                                <div class="metric-value neutral-value">${current_30d_pnl:,.0f}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            render_comparison_metric("📈 30-Day P&L", current_30d_pnl, comp_current_30d_pnl, prefix="$")
                         with col_roll3:
                             current_7d_sharpe = rolling_7d_sharpe.iloc[-1] if not rolling_7d_sharpe.empty else 0
-                            st.markdown(f"""
-                            <div class="metric-container">
-                                <div class="metric-label">📊 7-Day Sharpe</div>
-                                <div class="metric-value neutral-value">{current_7d_sharpe:.2f}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            render_comparison_metric("📊 7-Day Sharpe", current_7d_sharpe, comp_current_7d_sharpe, prefix="")
                         with col_roll4:
                             current_30d_sharpe = rolling_30d_sharpe.iloc[-1] if not rolling_30d_sharpe.empty else 0
-                            st.markdown(f"""
-                            <div class="metric-container">
-                                <div class="metric-label">📊 30-Day Sharpe</div>
-                                <div class="metric-value neutral-value">{current_30d_sharpe:.2f}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                            render_comparison_metric("📊 30-Day Sharpe", current_30d_sharpe, comp_current_30d_sharpe, prefix="")
                     else:
                         st.info("Insufficient data for rolling performance charts in selected period.")
                 except Exception as e:
@@ -1018,6 +1443,29 @@ def render():
         rr_ratio = avg_win / avg_loss if avg_loss != 0 else 0
         kelly = win_rate - ((1 - win_rate) / rr_ratio) if rr_ratio > 0 else 0
         
+        # Calculate comparison risk metrics if comparison is enabled
+        if comparison_enabled and comp_nav is not None and not comp_nav.empty:
+            comp_daily_returns = comp_nav_ser.pct_change().dropna()
+            comp_drawdown_episodes = comp_dd_ser[comp_dd_ser < 0]
+            comp_avg_drawdown = comp_drawdown_episodes.mean() * 100 if len(comp_drawdown_episodes) > 0 else 0
+            comp_peak_indices = (comp_dd_ser == 0).astype(int)
+            comp_recovery_periods = comp_peak_indices.groupby(comp_peak_indices.cumsum()).cumcount()
+            comp_max_dd_duration = comp_recovery_periods.max()
+            comp_var_95 = np.percentile(comp_daily_returns, 5) * 100
+            comp_cvar_95 = comp_daily_returns[comp_daily_returns <= np.percentile(comp_daily_returns, 5)].mean() * 100
+            comp_win_rate = len(comp_daily_returns[comp_daily_returns > 0]) / len(comp_daily_returns)
+            comp_avg_win = comp_daily_returns[comp_daily_returns > 0].mean()
+            comp_avg_loss = abs(comp_daily_returns[comp_daily_returns < 0].mean())
+            comp_rr_ratio = comp_avg_win / comp_avg_loss if comp_avg_loss != 0 else 0
+            comp_kelly = comp_win_rate - ((1 - comp_win_rate) / comp_rr_ratio) if comp_rr_ratio > 0 else 0
+        else:
+            comp_avg_drawdown = None
+            comp_max_dd_duration = None
+            comp_var_95 = None
+            comp_cvar_95 = None
+            comp_win_rate = None
+            comp_kelly = None
+        
         # Risk Metrics
         st.markdown('<h3 class="subsection-header">📊 Risk Metrics</h3>', unsafe_allow_html=True)
         
@@ -1025,61 +1473,37 @@ def render():
         col_risk1, col_risk2, col_risk3 = st.columns(3)
         
         with col_risk1:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📉 Average Drawdown</div>
-                <div class="metric-value negative-value">{avg_drawdown:.2f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Mean of all drawdown periods</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📉 Average Drawdown", avg_drawdown, comp_avg_drawdown, prefix="")
+            if not comparison_enabled or comp_avg_drawdown is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Mean of all drawdown periods</div>', unsafe_allow_html=True)
         
         with col_risk2:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">⏱️ Max DD Duration</div>
-                <div class="metric-value neutral-value">{max_dd_duration} days</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Longest recovery period</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("⏱️ Max DD Duration", max_dd_duration, comp_max_dd_duration, prefix="")
+            if not comparison_enabled or comp_max_dd_duration is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Longest recovery period</div>', unsafe_allow_html=True)
         
         with col_risk3:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">📊 Win Rate</div>
-                <div class="metric-value neutral-value">{win_rate*100:.1f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Days with positive NAV returns</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("📊 Win Rate", win_rate*100, comp_win_rate*100 if comp_win_rate is not None else None, prefix="")
+            if not comparison_enabled or comp_win_rate is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Days with positive NAV returns</div>', unsafe_allow_html=True)
         
         # Row 2: Advanced Risk Metrics
         col_risk4, col_risk5, col_risk6 = st.columns(3)
         
         with col_risk4:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">⚠️ VaR (95%)</div>
-                <div class="metric-value negative-value">{var_95:.2f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">95th percentile of daily returns</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("⚠️ VaR (95%)", var_95, comp_var_95, prefix="")
+            if not comparison_enabled or comp_var_95 is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">95th percentile of daily returns</div>', unsafe_allow_html=True)
         
         with col_risk5:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">⚠️ CVaR (95%)</div>
-                <div class="metric-value negative-value">{cvar_95:.2f}%</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Expected loss beyond VaR</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("⚠️ CVaR (95%)", cvar_95, comp_cvar_95, prefix="")
+            if not comparison_enabled or comp_cvar_95 is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Expected loss beyond VaR</div>', unsafe_allow_html=True)
         
         with col_risk6:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-label">🎯 Kelly Criterion</div>
-                <div class="metric-value neutral-value">{kelly:.3f}</div>
-                <div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Optimal leverage ratio</div>
-            </div>
-            """, unsafe_allow_html=True)
+            render_comparison_metric("🎯 Kelly Criterion", kelly, comp_kelly, prefix="")
+            if not comparison_enabled or comp_kelly is None:
+                st.markdown('<div style="font-size: 0.7rem; color: #6b7280; margin-top: 0.25rem;">Optimal leverage ratio</div>', unsafe_allow_html=True)
         
         # Rolling Drawdown Analysis
         st.markdown('<h3 class="subsection-header">📉 Rolling Drawdown Analysis</h3>', unsafe_allow_html=True)
@@ -1090,14 +1514,67 @@ def render():
                 broker_balance = filtered_tl.set_index("Date")["BrokerBalance"]
                 drawdown = (broker_balance / broker_balance.cummax() - 1) * 100
                 
-                fig_dd = px.area(drawdown, title="Rolling Drawdown (%)")
-                fig_dd.update_layout(
-                    xaxis_title="Date",
-                    yaxis_title="Drawdown (%)",
-                    height=400,
-                    showlegend=False
-                )
-                st.plotly_chart(fig_dd, use_container_width=True)
+                # Create drawdown chart with comparison if enabled
+                if comparison_enabled and comp_tl is not None and not comp_tl.empty:
+                    # Calculate comparison drawdown
+                    comp_broker_balance = comp_tl.set_index("Date")["BrokerBalance"]
+                    comp_drawdown = (comp_broker_balance / comp_broker_balance.cummax() - 1) * 100
+                    
+                    # Create figure with both series
+                    fig_dd = go.Figure()
+                    
+                    # Primary period drawdown
+                    fig_dd.add_trace(go.Scatter(
+                        x=drawdown.index,
+                        y=drawdown.values,
+                        mode='lines',
+                        name=f'Primary Period',
+                        line=dict(color='red', width=2),
+                        fill='tonexty'
+                    ))
+                    
+                    # Comparison period drawdown
+                    fig_dd.add_trace(go.Scatter(
+                        x=comp_drawdown.index,
+                        y=comp_drawdown.values,
+                        mode='lines',
+                        name=f'Comparison Period',
+                        line=dict(color='orange', width=2, dash='dash'),
+                        fill='tonexty'
+                    ))
+                    
+                    fig_dd.update_layout(
+                        title="Rolling Drawdown (%)",
+                        xaxis_title="Date",
+                        yaxis_title="Drawdown (%)",
+                        height=400,
+                        showlegend=True,
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        )
+                    )
+                    
+                    # Set y-axis range based on combined data
+                    all_data = pd.concat([drawdown, comp_drawdown])
+                    if pd.notna(all_data.min()) and pd.notna(all_data.max()):
+                        y_range = [all_data.min() * 1.05, all_data.max() * 0.95]
+                        fig_dd.update_layout(yaxis=dict(range=y_range))
+                    
+                    st.plotly_chart(fig_dd, use_container_width=True)
+                else:
+                    # Original single period chart
+                    fig_dd = px.area(drawdown, title="Rolling Drawdown (%)")
+                    fig_dd.update_layout(
+                        xaxis_title="Date",
+                        yaxis_title="Drawdown (%)",
+                        height=400,
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig_dd, use_container_width=True)
             except Exception as e:
                 st.info("Insufficient data for drawdown chart in selected period.")
 
@@ -1107,14 +1584,64 @@ def render():
             try:
                 headroom = filtered_tl["SpareCapital"] / filtered_tl["BrokerBalance"] * 100
                 
-                fig_headroom = px.line(filtered_tl, x="Date", y=headroom, title="Margin Headroom (%)")
-                fig_headroom.update_layout(
-                    xaxis_title="Date",
-                    yaxis_title="Spare Capital / Broker Balance (%)",
-                    height=400,
-                    showlegend=False
-                )
-                st.plotly_chart(fig_headroom, use_container_width=True)
+                # Create margin headroom chart with comparison if enabled
+                if comparison_enabled and comp_tl is not None and not comp_tl.empty:
+                    # Calculate comparison margin headroom
+                    comp_headroom = comp_tl["SpareCapital"] / comp_tl["BrokerBalance"] * 100
+                    
+                    # Create figure with both series
+                    fig_headroom = go.Figure()
+                    
+                    # Primary period headroom
+                    fig_headroom.add_trace(go.Scatter(
+                        x=filtered_tl["Date"],
+                        y=headroom,
+                        mode='lines',
+                        name=f'Primary Period',
+                        line=dict(color='#1f77b4', width=2)
+                    ))
+                    
+                    # Comparison period headroom
+                    fig_headroom.add_trace(go.Scatter(
+                        x=comp_tl["Date"],
+                        y=comp_headroom,
+                        mode='lines',
+                        name=f'Comparison Period',
+                        line=dict(color='#ff7f0e', width=2, dash='dash')
+                    ))
+                    
+                    fig_headroom.update_layout(
+                        title="Margin Headroom (%)",
+                        xaxis_title="Date",
+                        yaxis_title="Spare Capital / Broker Balance (%)",
+                        height=400,
+                        showlegend=True,
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        )
+                    )
+                    
+                    # Set y-axis range based on combined data
+                    all_data = pd.concat([headroom, comp_headroom])
+                    if pd.notna(all_data.min()) and pd.notna(all_data.max()):
+                        y_range = [all_data.min() * 0.95, all_data.max() * 1.05]
+                        fig_headroom.update_layout(yaxis=dict(range=y_range))
+                    
+                    st.plotly_chart(fig_headroom, use_container_width=True)
+                else:
+                    # Original single period chart
+                    fig_headroom = px.line(filtered_tl, x="Date", y=headroom, title="Margin Headroom (%)")
+                    fig_headroom.update_layout(
+                        xaxis_title="Date",
+                        yaxis_title="Spare Capital / Broker Balance (%)",
+                        height=400,
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig_headroom, use_container_width=True)
             except Exception as e:
                 st.info("Insufficient data for margin headroom chart in selected period.")
         else:

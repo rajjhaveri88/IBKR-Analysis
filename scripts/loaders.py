@@ -45,7 +45,13 @@ def load_raw_strategies() -> pd.DataFrame:
     fp = _find("Strategies.csv", "Data - Strategies.csv")
     if not fp:
         return pd.DataFrame()
-    df = pd.read_csv(fp).rename(columns=str.strip)
+    df = pd.read_csv(fp)
+    # If the CSV has no header, pandas will treat the first row as header values.
+    # In that case, expected columns like "UID" won't be present.
+    if "UID" not in df.columns:
+        df = pd.read_csv(fp, header=None, names=["UID", "Strategy", "Strategy_id"])
+    else:
+        df = df.rename(columns=str.strip)
     return df
 
 # ─── PROCESSED PARQUET LOADERS ────────────────────────────────
